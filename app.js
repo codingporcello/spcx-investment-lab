@@ -1,4 +1,7 @@
-const STORAGE_KEY = "spcx-psychology-journal-v1";
+const CACHE_KEY = "spcx-psychology-journal-cache-v2";
+const LEGACY_STORAGE_KEY = "spcx-psychology-journal-v1";
+const SETTINGS_KEY = "spcx-google-sheets-settings-v1";
+const BACKUP_VERSION = 2;
 
 const DEFAULT_REPLAY_CHOICE = "維持原本部位";
 
@@ -20,6 +23,7 @@ const regretEmojis = [
 
 const state = {
   entries: [],
+  appsScriptUrl: "",
   charts: {
     returnChart: null,
     moodChart: null,
@@ -55,6 +59,13 @@ const output = {
   mostCommonReplay: document.querySelector("#mostCommonReplay"),
   historyList: document.querySelector("#historyList"),
   analysisBox: document.querySelector("#analysisBox"),
+  syncStatus: document.querySelector("#syncStatus"),
+};
+
+const controls = {
+  appsScriptUrl: document.querySelector("#appsScriptUrl"),
+  saveSettingsButton: document.querySelector("#saveSettingsButton"),
+  refreshSheetsButton: document.querySelector("#refreshSheetsButton"),
 };
 
 function todayString() {
@@ -102,29 +113,56 @@ function emojiFor(value, scale) {
   return scale.find((item) => value <= item.max)?.emoji || scale.at(-1).emoji;
 }
 
+function normalizeTimestamp(value) {
+  if (!value) return Date.now();
+  if (typeof value === "number") return value;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
 function normalizeEntry(entry) {
+  const now = Date.now();
   return {
-    ...entry,
+    id: entry.id || crypto.randomUUID(),
+    date: entry.date || todayString(),
+    price: parseNumber(entry.price ?? entry.spcxPrice),
+    returnRate: parseNumber(entry.returnRate),
+    mood: parseNumber(entry.mood ?? entry.moodScore),
+    action: entry.action || "抱著",
+    replayChoice: entry.replayChoice || entry.redoChoice || DEFAULT_REPLAY_CHOICE,
+    regret: parseNumber(entry.regret ?? entry.regretScore),
+    note: entry.note || "",
     stockSymbol: entry.stockSymbol || "SPCX",
-    replayChoice: entry.replayChoice || DEFAULT_REPLAY_CHOICE,
     sharesHeld: entry.sharesHeld ?? null,
     averageCost: entry.averageCost ?? null,
-    createdAt: entry.createdAt || Date.now(),
-    updatedAt: entry.updatedAt || entry.createdAt || Date.now(),
+    deleted: entry.deleted === true || String(entry.deleted).toUpperCase() === "TRUE",
+    deletedAt: entry.deletedAt ? normalizeTimestamp(entry.deletedAt) : null,
+    createdAt: entry.createdAt ? normalizeTimestamp(entry.createdAt) : now,
+    updatedAt: entry.updatedAt ? normalizeTimestamp(entry.updatedAt) : now,
   };
 }
 
-function loadEntries() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    state.entries = Array.isArray(saved) ? saved.map(normalizeEntry) : [];
-  } catch {
-    state.entries = [];
-  }
+function toSheetEntry(entry) {
+  const normalized = normalizeEntry(entry);
+  return {
+    id: normalized.id,
+    date: normalized.date,
+    spcxPrice: normalized.price,
+    returnRate: normalized.returnRate,
+    moodScore: normalized.mood,
+    action: normalized.action,
+    redoChoice: normalized.replayChoice,
+    regretScore: normalized.regret,
+    note: normalized.note,
+    createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt,
+    deleted: normalized.deleted,
+    deletedAt: normalized.deletedAt,
+  };
 }
 
-function saveEntries() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.entries));
+function activeEntries() {
+  return state.entries.filter((entry) => !entry.deleted);
 }
 
 function sortEntries(entries, ascending = false) {
@@ -133,6 +171,102 @@ function sortEntries(entries, ascending = false) {
     if (dateCompare !== 0) return ascending ? dateCompare : -dateCompare;
     return ascending ? a.createdAt - b.createdAt : b.createdAt - a.createdAt;
   });
+}
+
+function setSyncStatus(status) {
+  const labels = {
+    synced: "🟢 已同步",
+    syncing: "🟡 同步中",
+    offline: "🔴 無法連線",
+  };
+  output.syncStatus.textContent = labels[status] || labels.offline;
+}
+
+function loadSettings() {
+  try {
+    const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    state.appsScriptUrl = settings.appsScriptUrl || "";
+  } catch {
+    state.appsScriptUrl = "";
+  }
+  controls.appsScriptUrl.value = state.appsScriptUrl;
+}
+
+function saveSettings() {
+  state.appsScriptUrl = controls.appsScriptUrl.value.trim();
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({ appsScriptUrl: state.appsScriptUrl }));
+  loadFromSheets();
+}
+
+function readCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
+    if (Array.isArray(cached)) return cached.map(normalizeEntry);
+  } catch {
+    // Fall through to legacy cache.
+  }
+
+  try {
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) || "[]");
+    return Array.isArray(legacy) ? legacy.map(normalizeEntry) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCache() {
+  localStorage.setItem(CACHE_KEY, JSON.stringify(state.entries.map(normalizeEntry)));
+}
+
+async function sheetsRequest(action, payload = {}) {
+  if (!state.appsScriptUrl) {
+    throw new Error("Missing Apps Script URL");
+  }
+
+  if (action === "list") {
+    const url = new URL(state.appsScriptUrl);
+    url.searchParams.set("action", "list");
+    url.searchParams.set("_", String(Date.now()));
+    const response = await fetch(url.toString(), { method: "GET" });
+    if (!response.ok) throw new Error("Google Sheets read failed");
+    const result = await response.json();
+    if (result.ok === false) throw new Error(result.error || "Google Sheets read failed");
+    return result;
+  }
+
+  const response = await fetch(state.appsScriptUrl, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  if (!response.ok) throw new Error("Google Sheets write failed");
+  const result = await response.json();
+  if (result.ok === false) throw new Error(result.error || "Google Sheets write failed");
+  return result;
+}
+
+async function loadFromSheets() {
+  if (!state.appsScriptUrl) {
+    state.entries = readCache();
+    setSyncStatus("offline");
+    render();
+    output.analysisBox.textContent = "請先填入 Apps Script Web App URL，才能使用 Google Sheets 雲端資料。";
+    return;
+  }
+
+  setSyncStatus("syncing");
+  try {
+    const result = await sheetsRequest("list");
+    state.entries = Array.isArray(result.entries) ? result.entries.map(normalizeEntry) : [];
+    writeCache();
+    setSyncStatus("synced");
+    render();
+  } catch (error) {
+    state.entries = readCache();
+    setSyncStatus("offline");
+    render();
+    output.analysisBox.textContent = "無法連線 Google Sheets，已顯示本機快取資料。";
+  }
 }
 
 function getSelectedRadio(name, fallback) {
@@ -175,7 +309,7 @@ function updateRangeLabels() {
 }
 
 function useYesterdayData() {
-  const latest = sortEntries(state.entries)[0];
+  const latest = sortEntries(activeEntries())[0];
   if (!latest) {
     output.analysisBox.textContent = "目前還沒有可複製的日記。先建立第一筆心理紀錄。";
     return;
@@ -197,13 +331,16 @@ function useYesterdayData() {
   document.querySelector("#saveButton").textContent = "儲存日記";
 }
 
-function upsertEntry(event) {
+async function upsertEntry(event) {
   event.preventDefault();
+  if (!state.appsScriptUrl) {
+    window.alert("請先設定 Apps Script Web App URL。");
+    return;
+  }
 
   const id = fields.id.value || crypto.randomUUID();
   const existing = state.entries.find((entry) => entry.id === id);
   const now = Date.now();
-
   const entry = normalizeEntry({
     id,
     date: fields.date.value,
@@ -214,26 +351,23 @@ function upsertEntry(event) {
     replayChoice: getSelectedReplayChoice(),
     note: fields.note.value.trim(),
     regret: parseNumber(fields.regret.value),
-    stockSymbol: fields.stockSymbol.value || "SPCX",
-    sharesHeld: fields.sharesHeld.value === "" ? null : parseNumber(fields.sharesHeld.value),
-    averageCost: fields.averageCost.value === "" ? null : parseNumber(fields.averageCost.value),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   });
 
-  if (existing) {
-    state.entries = state.entries.map((item) => (item.id === id ? entry : item));
-  } else {
-    state.entries.push(entry);
+  setSyncStatus("syncing");
+  try {
+    await sheetsRequest(existing ? "update" : "create", { entry: toSheetEntry(entry) });
+    resetForm();
+    await loadFromSheets();
+  } catch (error) {
+    setSyncStatus("offline");
+    window.alert("無法寫入 Google Sheets，請檢查 Apps Script URL 或網路連線。");
   }
-
-  saveEntries();
-  resetForm();
-  render();
 }
 
 function editEntry(id) {
-  const entry = state.entries.find((item) => item.id === id);
+  const entry = state.entries.find((item) => item.id === id && !item.deleted);
   if (!entry) return;
 
   fields.id.value = entry.id;
@@ -253,16 +387,21 @@ function editEntry(id) {
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function deleteEntry(id) {
-  const entry = state.entries.find((item) => item.id === id);
+async function deleteEntry(id) {
+  const entry = state.entries.find((item) => item.id === id && !item.deleted);
   if (!entry) return;
 
   const confirmed = window.confirm(`確定刪除 ${entry.date} 的日記嗎？`);
   if (!confirmed) return;
 
-  state.entries = state.entries.filter((item) => item.id !== id);
-  saveEntries();
-  render();
+  setSyncStatus("syncing");
+  try {
+    await sheetsRequest("delete", { id });
+    await loadFromSheets();
+  } catch (error) {
+    setSyncStatus("offline");
+    window.alert("無法刪除 Google Sheets 資料，請檢查連線後再試。");
+  }
 }
 
 function mostCommon(values) {
@@ -278,7 +417,8 @@ function average(values) {
 }
 
 function calculateStats() {
-  const total = state.entries.length;
+  const entries = activeEntries();
+  const total = entries.length;
   if (!total) {
     return {
       total,
@@ -292,18 +432,16 @@ function calculateStats() {
     };
   }
 
-  const returns = state.entries.map((entry) => entry.returnRate);
+  const returns = entries.map((entry) => entry.returnRate);
   return {
     total,
-    averageMood: average(state.entries.map((entry) => entry.mood)),
+    averageMood: average(entries.map((entry) => entry.mood)),
     highestReturn: Math.max(...returns),
     lowestReturn: Math.min(...returns),
     averageReturn: average(returns),
-    averageRegret: average(state.entries.map((entry) => entry.regret)),
-    mostCommonAction: mostCommon(state.entries.map((entry) => entry.action)),
-    mostCommonReplay: mostCommon(
-      state.entries.map((entry) => entry.replayChoice || DEFAULT_REPLAY_CHOICE),
-    ),
+    averageRegret: average(entries.map((entry) => entry.regret)),
+    mostCommonAction: mostCommon(entries.map((entry) => entry.action)),
+    mostCommonReplay: mostCommon(entries.map((entry) => entry.replayChoice || DEFAULT_REPLAY_CHOICE)),
   };
 }
 
@@ -321,14 +459,15 @@ function renderStats() {
 
 function renderHistory() {
   output.historyList.innerHTML = "";
+  const entries = activeEntries();
 
-  if (!state.entries.length) {
+  if (!entries.length) {
     const template = document.querySelector("#emptyStateTemplate");
     output.historyList.append(template.content.cloneNode(true));
     return;
   }
 
-  sortEntries(state.entries).forEach((entry) => {
+  sortEntries(entries).forEach((entry) => {
     const card = document.createElement("article");
     card.className = "journal-card";
     card.innerHTML = `
@@ -406,19 +545,15 @@ function makeDataset(label, data, color) {
 }
 
 function renderCharts() {
-  if (typeof Chart === "undefined") {
-    return;
-  }
+  if (typeof Chart === "undefined") return;
 
-  const ordered = sortEntries(state.entries, true);
+  const ordered = sortEntries(activeEntries(), true);
   const labels = ordered.map((entry) => entry.date);
-
   const chartConfigs = [
     {
       key: "returnChart",
       element: "returnChart",
       label: "總報酬率 %",
-      type: "line",
       data: ordered.map((entry) => entry.returnRate),
       color: "#2d8cff",
       options: chartOptions("總報酬率 %", { yTitle: "總報酬率 %" }),
@@ -427,7 +562,6 @@ function renderCharts() {
       key: "moodChart",
       element: "moodChart",
       label: "心情分數",
-      type: "line",
       data: ordered.map((entry) => entry.mood),
       color: "#78d4a5",
       options: chartOptions("心情分數", { yMin: 0, yMax: 10, yTitle: "心情分數" }),
@@ -436,7 +570,6 @@ function renderCharts() {
       key: "regretChart",
       element: "regretChart",
       label: "後悔指數",
-      type: "line",
       data: ordered.map((entry) => entry.regret),
       color: "#c8d0da",
       options: chartOptions("後悔指數", { yMin: 0, yMax: 10, yTitle: "後悔指數" }),
@@ -445,24 +578,16 @@ function renderCharts() {
 
   chartConfigs.forEach((config) => {
     const ctx = document.querySelector(`#${config.element}`);
-    if (state.charts[config.key]) {
-      state.charts[config.key].destroy();
-    }
-
+    if (state.charts[config.key]) state.charts[config.key].destroy();
     state.charts[config.key] = new Chart(ctx, {
-      type: config.type,
-      data: {
-        labels,
-        datasets: [makeDataset(config.label, config.data, config.color)],
-      },
+      type: "line",
+      data: { labels, datasets: [makeDataset(config.label, config.data, config.color)] },
       options: config.options,
     });
   });
 
   const scatterCtx = document.querySelector("#moodReturnChart");
-  if (state.charts.moodReturnChart) {
-    state.charts.moodReturnChart.destroy();
-  }
+  if (state.charts.moodReturnChart) state.charts.moodReturnChart.destroy();
   state.charts.moodReturnChart = new Chart(scatterCtx, {
     type: "scatter",
     data: {
@@ -515,11 +640,9 @@ function percentage(part, total) {
 }
 
 function generatePsychologyInsights() {
-  if (state.entries.length < 2) {
-    return ["至少需要兩篇日記，才能看出心理變化的方向。"];
-  }
+  const entries = sortEntries(activeEntries(), true);
+  if (entries.length < 2) return ["至少需要兩篇日記，才能看出心理變化的方向。"];
 
-  const entries = sortEntries(state.entries, true);
   const stats = calculateStats();
   const insights = [];
   const holdCount = entries.filter((entry) => entry.action === "抱著").length;
@@ -528,7 +651,6 @@ function generatePsychologyInsights() {
   const lossEntries = entries.filter((entry) => entry.returnRate < 0);
   const returnMoodCorrelation = correlation(entries, "returnRate", "mood");
   const returnRegretCorrelation = correlation(entries, "returnRate", "regret");
-  const regretAverage = stats.averageRegret;
 
   insights.push(
     `你有 ${percentage(holdCount, entries.length)}% 的時間選擇「繼續抱著」，目前最常出現的操作傾向是「${displayAction(
@@ -538,24 +660,23 @@ function generatePsychologyInsights() {
 
   if (highReturnEntries.length) {
     const highReturnRegret = average(highReturnEntries.map((entry) => entry.regret));
-    const delta = highReturnRegret - regretAverage;
+    const delta = highReturnRegret - stats.averageRegret;
     insights.push(
       delta >= 1
         ? `當報酬率超過20%後，你的後悔指數平均為 ${highReturnRegret.toFixed(
             1,
-          )}，比整體平均高 ${delta.toFixed(1)}，顯示獲利後反而更容易回想「如果當初更多」。`
+          )}，比整體平均高 ${delta.toFixed(1)}。`
         : `報酬率超過20%的紀錄中，後悔指數平均為 ${highReturnRegret.toFixed(
             1,
-          )}，和整體平均 ${regretAverage.toFixed(1)} 接近，高報酬沒有明顯放大後悔感。`,
+          )}，和整體平均 ${stats.averageRegret.toFixed(1)} 接近。`,
     );
   }
 
   insights.push(
     `你的平均心情與報酬率呈現「${describeCorrelation(
       returnMoodCorrelation,
-    )}」（相關係數 ${returnMoodCorrelation.toFixed(2)}），這能幫你觀察自己是不是因為賺錢才開心。`,
+    )}」（相關係數 ${returnMoodCorrelation.toFixed(2)}）。`,
   );
-
   insights.push(
     `報酬率與後悔指數呈現「${describeCorrelation(
       returnRegretCorrelation,
@@ -568,19 +689,14 @@ function generatePsychologyInsights() {
       lossEntries.length,
     );
     const overallSellRate = percentage(sellCount, entries.length);
-    if (lossSellRate === 0 && overallSellRate === 0) {
-      insights.push("虧損紀錄中沒有出現賣出的想法，目前看起來你在下跌時更偏向觀察或持有。");
-    } else {
-      insights.push(
-        lossSellRate <= overallSellRate
-          ? `虧損時，你只有 ${lossSellRate}% 的紀錄想賣，低於或接近整體賣出傾向 ${overallSellRate}%，代表虧損不一定會立刻觸發你想逃離。`
-          : `虧損時，你有 ${lossSellRate}% 的紀錄想賣，高於整體賣出傾向 ${overallSellRate}%，要特別留意虧損壓力是否推動決策。`,
-      );
-    }
+    insights.push(
+      lossSellRate <= overallSellRate
+        ? `虧損時，你想賣出的比例是 ${lossSellRate}%，低於或接近整體賣出傾向 ${overallSellRate}%。`
+        : `虧損時，你想賣出的比例是 ${lossSellRate}%，高於整體賣出傾向 ${overallSellRate}%。`,
+    );
   }
 
-  insights.push(`如果重來一次，你最常選擇「${stats.mostCommonReplay}」。這是你的心理後照鏡。`);
-
+  insights.push(`如果重來一次，你最常選擇「${stats.mostCommonReplay}」。`);
   return insights;
 }
 
@@ -604,28 +720,24 @@ function downloadFile(filename, content, type) {
 
 function exportCsv() {
   const headers = [
+    "id",
     "date",
-    "stockSymbol",
-    "price",
+    "spcxPrice",
     "returnRate",
-    "mood",
+    "moodScore",
     "action",
-    "replayChoice",
+    "redoChoice",
+    "regretScore",
     "note",
-    "regret",
-    "sharesHeld",
-    "averageCost",
     "createdAt",
     "updatedAt",
   ];
-  const rows = sortEntries(state.entries, true).map((entry) =>
-    headers
-      .map((key) => {
-        const value = entry[key] ?? "";
-        return `"${String(value).replaceAll('"', '""')}"`;
-      })
-      .join(","),
-  );
+  const rows = sortEntries(activeEntries(), true).map((entry) => {
+    const sheetEntry = toSheetEntry(entry);
+    return headers
+      .map((key) => `"${String(sheetEntry[key] ?? "").replaceAll('"', '""')}"`)
+      .join(",");
+  });
   downloadFile(
     "spcx-investment-psychology-journal.csv",
     [headers.join(","), ...rows].join("\n"),
@@ -635,8 +747,17 @@ function exportCsv() {
 
 function exportJson() {
   downloadFile(
-    "spcx-investment-psychology-journal.json",
-    JSON.stringify(sortEntries(state.entries, true), null, 2),
+    `spcx-investment-lab-export-${todayString()}.json`,
+    JSON.stringify(
+      {
+        version: BACKUP_VERSION,
+        exportedAt: new Date().toISOString(),
+        source: "google-sheets-cache",
+        entries: sortEntries(state.entries, true).map(toSheetEntry),
+      },
+      null,
+      2,
+    ),
     "application/json;charset=utf-8",
   );
 }
@@ -644,7 +765,7 @@ function exportJson() {
 function exportReport() {
   const stats = calculateStats();
   const insights = generatePsychologyInsights();
-  const records = sortEntries(state.entries, true)
+  const records = sortEntries(activeEntries(), true)
     .map(
       (entry) => `## ${formatDate(entry.date)}
 
@@ -701,13 +822,17 @@ function bindEvents() {
   document.querySelector("#exportCsvButton").addEventListener("click", exportCsv);
   document.querySelector("#exportJsonButton").addEventListener("click", exportJson);
   document.querySelector("#exportReportButton").addEventListener("click", exportReport);
+  controls.saveSettingsButton.addEventListener("click", saveSettings);
+  controls.refreshSheetsButton.addEventListener("click", loadFromSheets);
 }
 
 function init() {
-  loadEntries();
+  loadSettings();
   bindEvents();
   resetForm();
+  state.entries = readCache();
   render();
+  loadFromSheets();
 }
 
 init();
