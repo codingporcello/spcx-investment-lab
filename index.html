@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="SPCX 投資心理研究室：記錄投資人的情緒、後悔指數與操作傾向。"
+    />
+    <title>SPCX 投資心理研究室</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="mission-mark" aria-hidden="true">
+        <span></span>
+      </div>
+      <p class="eyebrow">研究 SPCX，更研究自己。</p>
+      <h1>🚀 SPCX 投資心理研究室</h1>
+      <p class="fixed-line">價格記錄市場，<br />日記記錄自己。</p>
+    </header>
+
+    <main class="app-shell">
+      <section class="entry-panel" aria-labelledby="entry-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Daily Log</p>
+            <h2 id="entry-title">新增日記</h2>
+          </div>
+          <div class="heading-actions">
+            <button class="ghost-button" id="useYesterdayButton" type="button">📋 使用昨天資料</button>
+            <button class="ghost-button" id="resetFormButton" type="button">清空</button>
+          </div>
+        </div>
+
+        <form id="entryForm" class="entry-form">
+          <input type="hidden" id="entryId" />
+          <input type="hidden" id="stockSymbol" value="SPCX" />
+          <input type="hidden" id="sharesHeld" />
+          <input type="hidden" id="averageCost" />
+
+          <label>
+            <span>日期</span>
+            <input id="date" name="date" type="date" required />
+          </label>
+
+          <div class="field-grid">
+            <label>
+              <span>SPCX價格</span>
+              <input
+                id="price"
+                name="price"
+                type="number"
+                inputmode="decimal"
+                min="0"
+                step="0.01"
+                placeholder="例：28.50"
+                required
+              />
+            </label>
+
+            <label>
+              <span>總報酬率 %</span>
+              <input
+                id="returnRate"
+                name="returnRate"
+                type="number"
+                inputmode="decimal"
+                step="0.01"
+                placeholder="例：12.8"
+                required
+              />
+            </label>
+          </div>
+
+          <label class="range-field mood-field">
+            <span><strong id="moodValue">今日心情：5/10 😐</strong></span>
+            <small aria-hidden="true">😭 😟 😐 🙂 😆 🚀</small>
+            <input id="mood" name="mood" type="range" min="0" max="10" value="5" />
+          </label>
+
+          <fieldset>
+            <legend>今天最想做的事</legend>
+            <div class="choice-row" role="radiogroup" aria-label="今天最想做的事">
+              <label>
+                <input type="radio" name="action" value="買" required />
+                <span>買</span>
+              </label>
+              <label>
+                <input type="radio" name="action" value="賣" />
+                <span>賣</span>
+              </label>
+              <label>
+                <input type="radio" name="action" value="抱著" checked />
+                <span>繼續抱著</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>🎯 如果重來一次</legend>
+            <div class="choice-row replay-row" role="radiogroup" aria-label="如果重來一次">
+              <label>
+                <input type="radio" name="replayChoice" value="買更多" required />
+                <span>買更多</span>
+              </label>
+              <label>
+                <input type="radio" name="replayChoice" value="維持原本部位" />
+                <span>維持原本部位</span>
+              </label>
+              <label>
+                <input type="radio" name="replayChoice" value="買少一點" />
+                <span>買少一點</span>
+              </label>
+              <label>
+                <input type="radio" name="replayChoice" value="根本不買" />
+                <span>根本不買</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <label>
+            <span>一句心得</span>
+            <textarea
+              id="note"
+              name="note"
+              rows="5"
+              placeholder="今天的自己，在市場裡看見了什麼？"
+              required
+            ></textarea>
+          </label>
+
+          <label class="range-field regret-field">
+            <span><strong id="regretValue">後悔指數：5/10 🤔</strong></span>
+            <small aria-hidden="true">😌 🤔 😣 😭</small>
+            <input id="regret" name="regret" type="range" min="0" max="10" value="5" />
+          </label>
+
+          <button class="primary-button" id="saveButton" type="submit">儲存日記</button>
+        </form>
+      </section>
+
+      <section class="stats-panel" aria-labelledby="stats-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Telemetry</p>
+            <h2 id="stats-title">統計區</h2>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <article>
+            <span>總日記數量</span>
+            <strong id="totalEntries">0</strong>
+          </article>
+          <article>
+            <span>平均心情</span>
+            <strong id="averageMood">0.0</strong>
+          </article>
+          <article>
+            <span>最高報酬率</span>
+            <strong id="highestReturn">0.00%</strong>
+          </article>
+          <article>
+            <span>最低報酬率</span>
+            <strong id="lowestReturn">0.00%</strong>
+          </article>
+          <article>
+            <span>平均報酬率</span>
+            <strong id="averageReturn">0.00%</strong>
+          </article>
+          <article>
+            <span>平均後悔指數</span>
+            <strong id="averageRegret">0.0</strong>
+          </article>
+          <article>
+            <span>最常選擇的動作</span>
+            <strong id="mostCommonAction">-</strong>
+          </article>
+          <article>
+            <span>最常出現的重來一次選項</span>
+            <strong id="mostCommonReplay">-</strong>
+          </article>
+        </div>
+
+        <div class="action-bar">
+          <button class="secondary-button" id="analyzeButton" type="button">
+            📊 分析我的投資心理
+          </button>
+          <button class="secondary-button" id="exportCsvButton" type="button">📥 匯出 CSV</button>
+          <button class="secondary-button" id="exportJsonButton" type="button">📥 匯出 JSON</button>
+          <button class="secondary-button" id="exportReportButton" type="button">
+            📄 匯出完整投資心理報告
+          </button>
+        </div>
+
+        <div class="analysis-box" id="analysisBox" aria-live="polite">
+          累積幾篇日記後，這裡會顯示你的投資心理觀察。
+        </div>
+      </section>
+
+      <section class="charts-panel" aria-labelledby="charts-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Flight Data</p>
+            <h2 id="charts-title">圖表區</h2>
+          </div>
+        </div>
+
+        <div class="chart-grid">
+          <article class="chart-card">
+            <h3>報酬率變化圖</h3>
+            <div class="chart-frame">
+              <canvas id="returnChart"></canvas>
+            </div>
+          </article>
+          <article class="chart-card">
+            <h3>心情變化圖</h3>
+            <div class="chart-frame">
+              <canvas id="moodChart"></canvas>
+            </div>
+          </article>
+          <article class="chart-card">
+            <h3>後悔指數變化圖</h3>
+            <div class="chart-frame">
+              <canvas id="regretChart"></canvas>
+            </div>
+          </article>
+          <article class="chart-card">
+            <h3>心情 vs 報酬率散點圖</h3>
+            <div class="chart-frame">
+              <canvas id="moodReturnChart"></canvas>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="history-panel" aria-labelledby="history-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Archive</p>
+            <h2 id="history-title">歷史紀錄</h2>
+          </div>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </section>
+    </main>
+
+    <template id="emptyStateTemplate">
+      <div class="empty-state">
+        <strong>尚未建立日記</strong>
+        <p>第一筆紀錄會成為你的投資心理基準線。</p>
+      </div>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
