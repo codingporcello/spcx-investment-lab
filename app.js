@@ -4,6 +4,8 @@ const SETTINGS_KEY = "spcx-google-sheets-settings-v1";
 const BACKUP_VERSION = 2;
 
 const DEFAULT_REPLAY_CHOICE = "維持原本部位";
+const DEFAULT_RECORD_TYPE = "盤中";
+const PSYCHE_TAGS = ["FOMO", "貪婪", "害怕", "後悔", "平靜", "興奮", "自信", "懷疑"];
 
 const moodEmojis = [
   { max: 1, emoji: "😭" },
@@ -57,6 +59,7 @@ const output = {
   averageRegret: document.querySelector("#averageRegret"),
   mostCommonAction: document.querySelector("#mostCommonAction"),
   mostCommonReplay: document.querySelector("#mostCommonReplay"),
+  tagLeaderboard: document.querySelector("#tagLeaderboard"),
   historyList: document.querySelector("#historyList"),
   analysisBox: document.querySelector("#analysisBox"),
   syncStatus: document.querySelector("#syncStatus"),
@@ -113,6 +116,20 @@ function emojiFor(value, scale) {
   return scale.find((item) => value <= item.max)?.emoji || scale.at(-1).emoji;
 }
 
+function normalizeTags(value) {
+  const tags = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(/[、,|]/)
+        .map((tag) => tag.trim());
+  return [...new Set(tags.filter((tag) => PSYCHE_TAGS.includes(tag)))];
+}
+
+function formatTags(tags) {
+  const normalized = normalizeTags(tags);
+  return normalized.length ? normalized.join("、") : "未標記";
+}
+
 function normalizeTimestamp(value) {
   if (!value) return Date.now();
   if (typeof value === "number") return value;
@@ -125,11 +142,13 @@ function normalizeEntry(entry) {
   return {
     id: entry.id || crypto.randomUUID(),
     date: entry.date || todayString(),
+    recordType: entry.recordType || DEFAULT_RECORD_TYPE,
     price: parseNumber(entry.price ?? entry.spcxPrice),
     returnRate: parseNumber(entry.returnRate),
     mood: parseNumber(entry.mood ?? entry.moodScore),
     action: entry.action || "抱著",
     replayChoice: entry.replayChoice || entry.redoChoice || DEFAULT_REPLAY_CHOICE,
+    psycheTags: normalizeTags(entry.psycheTags),
     regret: parseNumber(entry.regret ?? entry.regretScore),
     note: entry.note || "",
     stockSymbol: entry.stockSymbol || "SPCX",
@@ -147,11 +166,13 @@ function toSheetEntry(entry) {
   return {
     id: normalized.id,
     date: normalized.date,
+    recordType: normalized.recordType,
     spcxPrice: normalized.price,
     returnRate: normalized.returnRate,
     moodScore: normalized.mood,
     action: normalized.action,
     redoChoice: normalized.replayChoice,
+    psycheTags: normalized.psycheTags.join("、"),
     regretScore: normalized.regret,
     note: normalized.note,
     createdAt: normalized.createdAt,
@@ -282,8 +303,23 @@ function getSelectedAction() {
   return getSelectedRadio("action", "抱著");
 }
 
+function getSelectedRecordType() {
+  return getSelectedRadio("recordType", DEFAULT_RECORD_TYPE);
+}
+
 function getSelectedReplayChoice() {
   return getSelectedRadio("replayChoice", DEFAULT_REPLAY_CHOICE);
+}
+
+function getSelectedTags() {
+  return [...form.querySelectorAll('input[name="psycheTags"]:checked')].map((input) => input.value);
+}
+
+function setSelectedTags(tags) {
+  const normalized = normalizeTags(tags);
+  form.querySelectorAll('input[name="psycheTags"]').forEach((input) => {
+    input.checked = normalized.includes(input.value);
+  });
 }
 
 function resetForm() {
@@ -295,8 +331,10 @@ function resetForm() {
   fields.stockSymbol.value = "SPCX";
   fields.sharesHeld.value = "";
   fields.averageCost.value = "";
+  setSelectedRadio("recordType", DEFAULT_RECORD_TYPE);
   setSelectedRadio("action", "抱著");
   setSelectedRadio("replayChoice", DEFAULT_REPLAY_CHOICE);
+  setSelectedTags([]);
   updateRangeLabels();
   document.querySelector("#saveButton").textContent = "儲存日記";
 }
@@ -325,8 +363,10 @@ function useYesterdayData() {
   fields.stockSymbol.value = latest.stockSymbol || "SPCX";
   fields.sharesHeld.value = latest.sharesHeld ?? "";
   fields.averageCost.value = latest.averageCost ?? "";
+  setSelectedRadio("recordType", latest.recordType || DEFAULT_RECORD_TYPE);
   setSelectedRadio("action", latest.action);
   setSelectedRadio("replayChoice", latest.replayChoice || DEFAULT_REPLAY_CHOICE);
+  setSelectedTags(latest.psycheTags);
   updateRangeLabels();
   document.querySelector("#saveButton").textContent = "儲存日記";
 }
@@ -344,11 +384,13 @@ async function upsertEntry(event) {
   const entry = normalizeEntry({
     id,
     date: fields.date.value,
+    recordType: getSelectedRecordType(),
     price: parseNumber(fields.price.value),
     returnRate: parseNumber(fields.returnRate.value),
     mood: parseNumber(fields.mood.value),
     action: getSelectedAction(),
     replayChoice: getSelectedReplayChoice(),
+    psycheTags: getSelectedTags(),
     note: fields.note.value.trim(),
     regret: parseNumber(fields.regret.value),
     createdAt: existing?.createdAt || now,
@@ -380,8 +422,10 @@ function editEntry(id) {
   fields.stockSymbol.value = entry.stockSymbol || "SPCX";
   fields.sharesHeld.value = entry.sharesHeld ?? "";
   fields.averageCost.value = entry.averageCost ?? "";
+  setSelectedRadio("recordType", entry.recordType || DEFAULT_RECORD_TYPE);
   setSelectedRadio("action", entry.action);
   setSelectedRadio("replayChoice", entry.replayChoice || DEFAULT_REPLAY_CHOICE);
+  setSelectedTags(entry.psycheTags);
   updateRangeLabels();
   document.querySelector("#saveButton").textContent = "更新日記";
   form.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -412,6 +456,24 @@ function mostCommon(values) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
 }
 
+function countTags(entries) {
+  return entries
+    .flatMap((entry) => normalizeTags(entry.psycheTags))
+    .reduce((acc, tag) => {
+      acc[tag] = (acc[tag] || 0) + 1;
+      return acc;
+    }, {});
+}
+
+function rankedTags(entries) {
+  return Object.entries(countTags(entries)).sort((a, b) => b[1] - a[1]);
+}
+
+function formatTagLeaderboard(entries) {
+  const ranking = rankedTags(entries);
+  return ranking.length ? ranking.map(([tag, count]) => `${tag}：${count}次`).join("\n") : "-";
+}
+
 function average(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
@@ -429,6 +491,7 @@ function calculateStats() {
       averageRegret: 0,
       mostCommonAction: "-",
       mostCommonReplay: "-",
+      tagLeaderboard: "-",
     };
   }
 
@@ -442,6 +505,7 @@ function calculateStats() {
     averageRegret: average(entries.map((entry) => entry.regret)),
     mostCommonAction: mostCommon(entries.map((entry) => entry.action)),
     mostCommonReplay: mostCommon(entries.map((entry) => entry.replayChoice || DEFAULT_REPLAY_CHOICE)),
+    tagLeaderboard: formatTagLeaderboard(entries),
   };
 }
 
@@ -455,6 +519,7 @@ function renderStats() {
   output.averageRegret.textContent = stats.averageRegret.toFixed(1);
   output.mostCommonAction.textContent = displayAction(stats.mostCommonAction);
   output.mostCommonReplay.textContent = stats.mostCommonReplay;
+  output.tagLeaderboard.textContent = stats.tagLeaderboard;
 }
 
 function renderHistory() {
@@ -473,11 +538,13 @@ function renderHistory() {
     card.innerHTML = `
       <div class="journal-divider" aria-hidden="true"></div>
       <div class="journal-line"><span>📅</span><strong>${formatDate(entry.date)}</strong></div>
+      <div class="journal-line"><span>🕒</span><div>記錄類型：<strong>${escapeHtml(entry.recordType || DEFAULT_RECORD_TYPE)}</strong></div></div>
       <div class="journal-line"><span>💰</span><div>SPCX：<strong>${formatNumber(entry.price)}</strong></div></div>
       <div class="journal-line"><span>📈</span><div>報酬率：<strong>${formatPercent(entry.returnRate)}</strong></div></div>
       <div class="journal-line"><span>${emojiFor(entry.mood, moodEmojis)}</span><div>心情：<strong>${entry.mood}</strong></div></div>
       <div class="journal-line"><span>🚀</span><div>動作：<strong>${displayAction(entry.action)}</strong></div></div>
       <div class="journal-line"><span>🎯</span><div>重來一次：<strong>${entry.replayChoice || DEFAULT_REPLAY_CHOICE}</strong></div></div>
+      <div class="journal-line"><span>🧠</span><div>心理標籤：<strong>${escapeHtml(formatTags(entry.psycheTags))}</strong></div></div>
       <div class="journal-line"><span>${emojiFor(entry.regret, regretEmojis)}</span><div>後悔指數：<strong>${entry.regret}</strong></div></div>
       <div class="journal-line"><span>💬</span><div>心得：</div></div>
       <p class="journal-note">${escapeHtml(entry.note)}</p>
@@ -651,12 +718,23 @@ function generatePsychologyInsights() {
   const lossEntries = entries.filter((entry) => entry.returnRate < 0);
   const returnMoodCorrelation = correlation(entries, "returnRate", "mood");
   const returnRegretCorrelation = correlation(entries, "returnRate", "regret");
+  const topTag = rankedTags(entries)[0];
 
   insights.push(
     `你有 ${percentage(holdCount, entries.length)}% 的時間選擇「繼續抱著」，目前最常出現的操作傾向是「${displayAction(
       stats.mostCommonAction,
     )}」。`,
   );
+
+  if (topTag) {
+    const [tag, count] = topTag;
+    insights.push(
+      `你最常出現的心理標籤是「${tag}」，出現比例 ${percentage(
+        count,
+        entries.length,
+      )}%。這是目前最值得持續觀察的投資心理訊號。`,
+    );
+  }
 
   if (highReturnEntries.length) {
     const highReturnRegret = average(highReturnEntries.map((entry) => entry.regret));
@@ -722,11 +800,13 @@ function exportCsv() {
   const headers = [
     "id",
     "date",
+    "recordType",
     "spcxPrice",
     "returnRate",
     "moodScore",
     "action",
     "redoChoice",
+    "psycheTags",
     "regretScore",
     "note",
     "createdAt",
@@ -769,11 +849,13 @@ function exportReport() {
     .map(
       (entry) => `## ${formatDate(entry.date)}
 
+- 記錄類型：${entry.recordType || DEFAULT_RECORD_TYPE}
 - SPCX：${formatNumber(entry.price)}
 - 報酬率：${formatPercent(entry.returnRate)}
 - 心情：${entry.mood}/10 ${emojiFor(entry.mood, moodEmojis)}
 - 動作：${displayAction(entry.action)}
 - 重來一次：${entry.replayChoice || DEFAULT_REPLAY_CHOICE}
+- 心理標籤：${formatTags(entry.psycheTags)}
 - 後悔指數：${entry.regret}/10 ${emojiFor(entry.regret, regretEmojis)}
 - 心得：${entry.note}`,
     )
@@ -793,6 +875,11 @@ function exportReport() {
 - 最低報酬率：${formatPercent(stats.lowestReturn)}
 - 最常選擇的動作：${displayAction(stats.mostCommonAction)}
 - 最常出現的重來一次選項：${stats.mostCommonReplay}
+- 心理標籤排行榜：
+${stats.tagLeaderboard
+  .split("\n")
+  .map((line) => `  - ${line}`)
+  .join("\n")}
 
 ## 心理分析摘要
 

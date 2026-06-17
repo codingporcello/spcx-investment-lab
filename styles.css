@@ -324,6 +324,39 @@ fieldset {
   color: #05070d;
 }
 
+.tag-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tag-grid label {
+  min-height: 42px;
+}
+
+.tag-grid input {
+  position: absolute;
+  opacity: 0;
+}
+
+.tag-grid span {
+  height: 100%;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #07101a;
+  color: var(--muted);
+  text-align: center;
+}
+
+.tag-grid input:checked + span {
+  border-color: var(--blue-bright);
+  background: rgba(45, 140, 255, 0.16);
+  color: var(--white);
+}
+
 .primary-button,
 .secondary-button,
 .ghost-button,
@@ -377,6 +410,13 @@ fieldset {
   font-size: clamp(1.05rem, 5.5vw, 1.4rem);
   line-height: 1.18;
   overflow-wrap: anywhere;
+}
+
+.wide-stat strong {
+  color: var(--silver);
+  font-size: 0.98rem;
+  line-height: 1.7;
+  white-space: pre-line;
 }
 
 .action-bar {
@@ -540,6 +580,10 @@ fieldset {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .wide-stat {
+    grid-column: span 3;
+  }
+
   .action-bar {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -553,6 +597,10 @@ fieldset {
 @media (min-width: 900px) {
   .stat-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .wide-stat {
+    grid-column: span 4;
   }
 }
 

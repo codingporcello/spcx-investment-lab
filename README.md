@@ -2,7 +2,7 @@
 
 價格記錄市場，日記記錄自己。
 
-這是一個可部署於 GitHub Pages 的單頁網站，用來研究投資人的心情、後悔指數、報酬率、操作傾向與「如果重來一次」的心理變化。
+這是一個可部署於 GitHub Pages 的單頁網站，用來研究投資人的心情、後悔指數、記錄類型、心理標籤、操作傾向與「如果重來一次」的心理變化。
 
 V3 版使用：
 
@@ -42,9 +42,18 @@ createdAt
 updatedAt
 deleted
 deletedAt
+recordType
+psycheTags
 ```
 
 `deleted` 和 `deletedAt` 是軟刪除用欄位。畫面不會顯示 deleted 為 TRUE 的資料。
+
+如果你已經有舊版資料，請把 `recordType` 和 `psycheTags` 加在最後兩欄，不要插到中間。舊資料缺少這兩欄時，網站會自動視為：
+
+- `recordType`：盤中
+- `psycheTags`：空白
+
+V3 只保留三種記錄類型：`盤中`、`收盤`、`回顧`。不加入盤後，避免資料被過度切碎。
 
 ### 2. 建立 Apps Script
 

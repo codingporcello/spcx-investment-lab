@@ -75,6 +75,24 @@
             <input id="date" name="date" type="date" required />
           </label>
 
+          <fieldset>
+            <legend>🕒 記錄類型</legend>
+            <div class="choice-row" role="radiogroup" aria-label="記錄類型">
+              <label>
+                <input type="radio" name="recordType" value="盤中" checked required />
+                <span>盤中</span>
+              </label>
+              <label>
+                <input type="radio" name="recordType" value="收盤" />
+                <span>收盤</span>
+              </label>
+              <label>
+                <input type="radio" name="recordType" value="回顧" />
+                <span>回顧</span>
+              </label>
+            </div>
+          </fieldset>
+
           <div class="field-grid">
             <label>
               <span>SPCX價格</span>
@@ -150,6 +168,44 @@
             </div>
           </fieldset>
 
+          <fieldset>
+            <legend>🧠 心理標籤</legend>
+            <div class="tag-grid" aria-label="心理標籤">
+              <label>
+                <input type="checkbox" name="psycheTags" value="FOMO" />
+                <span>FOMO</span>
+              </label>
+              <label>
+                <input type="checkbox" name="psycheTags" value="貪婪" />
+                <span>貪婪</span>
+              </label>
+              <label>
+                <input type="checkbox" name="psycheTags" value="害怕" />
+                <span>害怕</span>
+              </label>
+              <label>
+                <input type="checkbox" name="psycheTags" value="後悔" />
+                <span>後悔</span>
+              </label>
+              <label>
+                <input type="checkbox" name="psycheTags" value="平靜" />
+                <span>平靜</span>
+              </label>
+              <label>
+                <input type="checkbox" name="psycheTags" value="興奮" />
+                <span>興奮</span>
+              </label>
+              <label>
+                <input type="checkbox" name="psycheTags" value="自信" />
+                <span>自信</span>
+              </label>
+              <label>
+                <input type="checkbox" name="psycheTags" value="懷疑" />
+                <span>懷疑</span>
+              </label>
+            </div>
+          </fieldset>
+
           <label>
             <span>一句心得</span>
             <textarea
@@ -211,6 +267,10 @@
           <article>
             <span>最常出現的重來一次選項</span>
             <strong id="mostCommonReplay">-</strong>
+          </article>
+          <article class="wide-stat">
+            <span>心理標籤排行榜</span>
+            <strong id="tagLeaderboard">-</strong>
           </article>
         </div>
 

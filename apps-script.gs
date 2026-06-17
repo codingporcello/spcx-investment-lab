@@ -13,6 +13,8 @@ const HEADERS = [
   "updatedAt",
   "deleted",
   "deletedAt",
+  "recordType",
+  "psycheTags",
 ];
 
 function doGet(e) {
@@ -167,11 +169,13 @@ function normalizeEntry(entry) {
   return {
     id: String(entry.id || Utilities.getUuid()),
     date: entry.date ? String(entry.date).slice(0, 10) : "",
+    recordType: entry.recordType || "盤中",
     spcxPrice: Number(entry.spcxPrice || 0),
     returnRate: Number(entry.returnRate || 0),
     moodScore: Number(entry.moodScore || 0),
     action: entry.action || "",
     redoChoice: entry.redoChoice || "",
+    psycheTags: normalizeTags(entry.psycheTags).join("、"),
     regretScore: Number(entry.regretScore || 0),
     note: entry.note || "",
     createdAt: Number(entry.createdAt || now),
@@ -179,6 +183,21 @@ function normalizeEntry(entry) {
     deleted: entry.deleted === true || String(entry.deleted).toUpperCase() === "TRUE",
     deletedAt: entry.deletedAt ? Number(entry.deletedAt) : "",
   };
+}
+
+function normalizeTags(value) {
+  const allowedTags = ["FOMO", "貪婪", "害怕", "後悔", "平靜", "興奮", "自信", "懷疑"];
+  const rawTags = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(/[、,|]/)
+        .map(function (tag) {
+          return tag.trim();
+        });
+
+  return rawTags.filter(function (tag, index) {
+    return allowedTags.indexOf(tag) >= 0 && rawTags.indexOf(tag) === index;
+  });
 }
 
 function parsePayload(e) {
