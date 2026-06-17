@@ -8,6 +8,7 @@
       content="SPCX 投資心理研究室：記錄投資人的情緒、後悔指數與操作傾向。"
     />
     <title>SPCX 投資心理研究室</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -27,29 +28,48 @@
     </header>
 
     <main class="app-shell">
-      <section class="settings-panel" aria-labelledby="settings-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Cloud Source</p>
-            <h2 id="settings-title">⚙️ Google Sheets 設定</h2>
-          </div>
-        </div>
+      <section class="settings-panel settings-collapsed" aria-labelledby="settings-title">
+        <button
+          class="settings-toggle-card"
+          id="settingsToggleButton"
+          type="button"
+          aria-expanded="false"
+          aria-controls="settingsContent"
+        >
+          <span class="settings-toggle-icon" aria-hidden="true">⚙️</span>
+          <span>
+            <span class="eyebrow">Cloud Source</span>
+            <strong id="settings-title">Google Sheets 設定</strong>
+          </span>
+          <span class="settings-toggle-action">打開設定</span>
+        </button>
 
-        <div class="settings-grid">
-          <label>
-            <span>Apps Script Web App URL</span>
-            <input
-              id="appsScriptUrl"
-              type="url"
-              placeholder="https://script.google.com/macros/s/xxxxxxxx/exec"
-            />
-          </label>
-          <button class="secondary-button" id="saveSettingsButton" type="button">儲存設定</button>
-          <button class="secondary-button" id="refreshSheetsButton" type="button">重新讀取雲端資料</button>
+        <div class="settings-content" id="settingsContent" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Cloud Source</p>
+              <h2>⚙️ Google Sheets 設定</h2>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <label>
+              <span>Apps Script Web App URL</span>
+              <input
+                id="appsScriptUrl"
+                type="url"
+                placeholder="https://script.google.com/macros/s/xxxxxxxx/exec"
+              />
+            </label>
+            <button class="secondary-button" id="saveSettingsButton" type="button">儲存設定</button>
+            <button class="secondary-button" id="refreshSheetsButton" type="button">
+              重新讀取雲端資料
+            </button>
+          </div>
+          <p class="settings-note">
+            Google Sheets 是主要資料來源。LocalStorage 只作為暫時無法連線時的本機快取。
+          </p>
         </div>
-        <p class="settings-note">
-          Google Sheets 是主要資料來源。LocalStorage 只作為暫時無法連線時的本機快取。
-        </p>
       </section>
 
       <section class="entry-panel" aria-labelledby="entry-title">

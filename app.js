@@ -69,6 +69,10 @@ const controls = {
   appsScriptUrl: document.querySelector("#appsScriptUrl"),
   saveSettingsButton: document.querySelector("#saveSettingsButton"),
   refreshSheetsButton: document.querySelector("#refreshSheetsButton"),
+  settingsPanel: document.querySelector(".settings-panel"),
+  settingsContent: document.querySelector("#settingsContent"),
+  settingsToggleButton: document.querySelector("#settingsToggleButton"),
+  settingsToggleAction: document.querySelector(".settings-toggle-action"),
 };
 
 function todayString() {
@@ -217,6 +221,17 @@ function saveSettings() {
   state.appsScriptUrl = controls.appsScriptUrl.value.trim();
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ appsScriptUrl: state.appsScriptUrl }));
   loadFromSheets();
+}
+
+function setSettingsExpanded(isExpanded) {
+  controls.settingsPanel.classList.toggle("settings-collapsed", !isExpanded);
+  controls.settingsContent.hidden = !isExpanded;
+  controls.settingsToggleButton.setAttribute("aria-expanded", String(isExpanded));
+  controls.settingsToggleAction.textContent = isExpanded ? "收起設定" : "打開設定";
+}
+
+function toggleSettings() {
+  setSettingsExpanded(controls.settingsContent.hidden);
 }
 
 function readCache() {
@@ -909,6 +924,7 @@ function bindEvents() {
   document.querySelector("#exportCsvButton").addEventListener("click", exportCsv);
   document.querySelector("#exportJsonButton").addEventListener("click", exportJson);
   document.querySelector("#exportReportButton").addEventListener("click", exportReport);
+  controls.settingsToggleButton.addEventListener("click", toggleSettings);
   controls.saveSettingsButton.addEventListener("click", saveSettings);
   controls.refreshSheetsButton.addEventListener("click", loadFromSheets);
 }
