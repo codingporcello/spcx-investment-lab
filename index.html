@@ -122,8 +122,8 @@
                 type="number"
                 inputmode="decimal"
                 min="0"
-                step="0.001"
-                placeholder="例：169.000"
+                step="0.0001"
+                placeholder="169.3100"
                 required
               />
             </label>
@@ -133,10 +133,11 @@
               <input
                 id="returnRate"
                 name="returnRate"
-                type="number"
-                inputmode="decimal"
-                step="0.01"
+                type="text"
+                inputmode="text"
+                pattern="^-?\d+(\.\d{1,2})?$"
                 placeholder="例：-6.73"
+                title="請輸入數字，可為負數，最多兩位小數。例：-6.73、0、26.99"
                 required
               />
             </label>
