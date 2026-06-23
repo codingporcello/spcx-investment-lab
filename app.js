@@ -95,8 +95,25 @@ function formatNumber(value, decimals = 2) {
   });
 }
 
+function formatPrice(value) {
+  return formatNumber(value, 3);
+}
+
 function formatPercent(value) {
   return `${formatNumber(value)}%`;
+}
+
+function formatSignedPercent(value) {
+  const number = parseNumber(value);
+  if (number > 0) return `+${formatPercent(number)}`;
+  return formatPercent(number);
+}
+
+function returnToneClass(value) {
+  const number = parseNumber(value);
+  if (number > 0) return "return-positive";
+  if (number < 0) return "return-negative";
+  return "return-neutral";
 }
 
 function formatDate(dateString) {
@@ -384,6 +401,7 @@ function useYesterdayData() {
   setSelectedTags(latest.psycheTags);
   updateRangeLabels();
   document.querySelector("#saveButton").textContent = "儲存日記";
+  window.alert("已載入最近一筆日記資料");
 }
 
 async function upsertEntry(event) {
@@ -554,8 +572,8 @@ function renderHistory() {
       <div class="journal-divider" aria-hidden="true"></div>
       <div class="journal-line"><span>📅</span><strong>${formatDate(entry.date)}</strong></div>
       <div class="journal-line"><span>🕒</span><div>記錄類型：<strong>${escapeHtml(entry.recordType || DEFAULT_RECORD_TYPE)}</strong></div></div>
-      <div class="journal-line"><span>💰</span><div>SPCX：<strong>${formatNumber(entry.price)}</strong></div></div>
-      <div class="journal-line"><span>📈</span><div>報酬率：<strong>${formatPercent(entry.returnRate)}</strong></div></div>
+      <div class="journal-line"><span>💰</span><div>SPCX：<strong>${formatPrice(entry.price)}</strong></div></div>
+      <div class="journal-line"><span>📈</span><div>報酬率：<strong class="${returnToneClass(entry.returnRate)}">${formatSignedPercent(entry.returnRate)}</strong></div></div>
       <div class="journal-line"><span>${emojiFor(entry.mood, moodEmojis)}</span><div>心情：<strong>${entry.mood}</strong></div></div>
       <div class="journal-line"><span>🚀</span><div>動作：<strong>${displayAction(entry.action)}</strong></div></div>
       <div class="journal-line"><span>🎯</span><div>重來一次：<strong>${entry.replayChoice || DEFAULT_REPLAY_CHOICE}</strong></div></div>
@@ -865,7 +883,7 @@ function exportReport() {
       (entry) => `## ${formatDate(entry.date)}
 
 - 記錄類型：${entry.recordType || DEFAULT_RECORD_TYPE}
-- SPCX：${formatNumber(entry.price)}
+- SPCX：${formatPrice(entry.price)}
 - 報酬率：${formatPercent(entry.returnRate)}
 - 心情：${entry.mood}/10 ${emojiFor(entry.mood, moodEmojis)}
 - 動作：${displayAction(entry.action)}

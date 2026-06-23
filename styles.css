@@ -578,6 +578,18 @@ fieldset {
   color: var(--white);
 }
 
+.journal-line strong.return-positive {
+  color: var(--ok);
+}
+
+.journal-line strong.return-negative {
+  color: var(--danger);
+}
+
+.journal-line strong.return-neutral {
+  color: var(--muted);
+}
+
 .journal-note {
   margin: 2px 0 0;
   padding: 12px;
