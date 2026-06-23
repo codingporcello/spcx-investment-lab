@@ -5,368 +5,82 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="SPCX 投資心理研究室：記錄投資人的情緒、後悔指數與操作傾向。"
+      content="偶像特典會心理分析工具：用分層式總覽觀察每位偶像互動後的心情、壓力與消費後悔。"
     />
-    <title>SPCX 投資心理研究室</title>
-    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <title>偶像特典會心理分析工具</title>
+    <link rel="icon" type="image/jpeg" href="public/hzme-icon.jpg" />
+    <link rel="apple-touch-icon" href="public/apple-touch-icon.jpg" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="config.js"></script>
+    <script src="app.js" defer></script>
   </head>
   <body>
     <aside class="sync-panel" aria-label="同步狀態">
-      <span class="sync-status" id="syncStatus">🔴 無法連線</span>
+      <span class="sync-status" id="syncStatus" data-status="local">本機模式</span>
     </aside>
 
     <header class="site-header">
       <div class="mission-mark" aria-hidden="true">
-        <span></span>
+        <img src="public/hzme-icon.jpg" alt="" />
       </div>
-      <p class="eyebrow">研究 SPCX，更研究自己。</p>
-      <h1>🚀 SPCX 投資心理研究室</h1>
-      <p class="fixed-line">價格記錄市場，<br />日記記錄自己。</p>
+      <p class="eyebrow">偶像推活研究室</p>
+      <h1>偶像特典會心理分析工具</h1>
+      <p class="fixed-line">分析互動後的心情變化，判斷她是在增加喜歡，還是在消耗自己。</p>
     </header>
 
+    <nav class="app-nav" aria-label="主要功能">
+      <button class="nav-button is-active" type="button" data-view="dashboard">總覽</button>
+      <button class="nav-button" type="button" data-view="compare">比較分析</button>
+      <button class="nav-button" type="button" data-view="archive">歷史紀錄</button>
+    </nav>
+
     <main class="app-shell">
-      <section class="settings-panel settings-collapsed" aria-labelledby="settings-title">
-        <button
-          class="settings-toggle-card"
-          id="settingsToggleButton"
-          type="button"
-          aria-expanded="false"
-          aria-controls="settingsContent"
-        >
-          <span class="settings-toggle-icon" aria-hidden="true">⚙️</span>
-          <span>
-            <span class="eyebrow">Cloud Source</span>
-            <strong id="settings-title">Google Sheets 設定</strong>
-          </span>
-          <span class="settings-toggle-action">打開設定</span>
-        </button>
-
-        <div class="settings-content" id="settingsContent" hidden>
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Cloud Source</p>
-              <h2>⚙️ Google Sheets 設定</h2>
-            </div>
-          </div>
-
-          <div class="settings-grid">
-            <label>
-              <span>Apps Script Web App URL</span>
-              <input
-                id="appsScriptUrl"
-                type="url"
-                placeholder="https://script.google.com/macros/s/xxxxxxxx/exec"
-              />
-            </label>
-            <button class="secondary-button" id="saveSettingsButton" type="button">儲存設定</button>
-            <button class="secondary-button" id="refreshSheetsButton" type="button">
-              重新讀取雲端資料
-            </button>
-          </div>
-          <p class="settings-note">
-            Google Sheets 是主要資料來源。LocalStorage 只作為暫時無法連線時的本機快取。
-          </p>
+      <section class="sync-design-panel" aria-labelledby="sync-design-title">
+        <div>
+          <p class="eyebrow">雲端同步</p>
+          <h2 id="sync-design-title">Google Sheets 同步設定</h2>
+          <p>設定 Apps Script Web App URL 後，偶像資料與特典紀錄會同步到 Google Sheets；失敗時會保留本機快取。</p>
         </div>
-      </section>
-
-      <section class="entry-panel" aria-labelledby="entry-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Daily Log</p>
-            <h2 id="entry-title">新增日記</h2>
-          </div>
-          <div class="heading-actions">
-            <button class="ghost-button" id="useYesterdayButton" type="button">📋 使用昨天資料</button>
-            <button class="ghost-button" id="resetFormButton" type="button">清空</button>
-          </div>
-        </div>
-
-        <form id="entryForm" class="entry-form">
-          <input type="hidden" id="entryId" />
-          <input type="hidden" id="stockSymbol" value="SPCX" />
-          <input type="hidden" id="sharesHeld" />
-          <input type="hidden" id="averageCost" />
-
+        <form id="syncSettingsForm" class="sync-settings-form">
           <label>
-            <span>日期</span>
-            <input id="date" name="date" type="date" required />
+            <span>Apps Script Web App URL</span>
+            <input
+              id="appsScriptUrl"
+              type="url"
+              placeholder="https://script.google.com/macros/s/xxxx/exec"
+            />
           </label>
-
-          <fieldset>
-            <legend>🕒 記錄類型</legend>
-            <div class="choice-row" role="radiogroup" aria-label="記錄類型">
-              <label>
-                <input type="radio" name="recordType" value="盤中" checked required />
-                <span>盤中</span>
-              </label>
-              <label>
-                <input type="radio" name="recordType" value="收盤" />
-                <span>收盤</span>
-              </label>
-              <label>
-                <input type="radio" name="recordType" value="回顧" />
-                <span>回顧</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <div class="field-grid">
-            <label>
-              <span>SPCX價格</span>
-              <input
-                id="price"
-                name="price"
-                type="number"
-                inputmode="decimal"
-                min="0"
-                step="0.0001"
-                placeholder="169.3100"
-                required
-              />
-            </label>
-
-            <label>
-              <span>總報酬率 %</span>
-              <input
-                id="returnRate"
-                name="returnRate"
-                type="text"
-                inputmode="text"
-                pattern="^-?\d+(\.\d{1,2})?$"
-                placeholder="例：-6.73"
-                title="請輸入數字，可為負數，最多兩位小數。例：-6.73、0、26.99"
-                required
-              />
-            </label>
+          <div class="section-actions">
+            <button class="secondary-button" type="submit">儲存同步設定</button>
+            <button class="ghost-button" id="refreshSheetsButton" type="button">重新讀取</button>
           </div>
-
-          <label class="range-field mood-field">
-            <span><strong id="moodValue">今日心情：5/10 😐</strong></span>
-            <small aria-hidden="true">😭 😟 😐 🙂 😆 🚀</small>
-            <input id="mood" name="mood" type="range" min="0" max="10" value="5" />
-          </label>
-
-          <fieldset>
-            <legend>今天最想做的事</legend>
-            <div class="choice-row" role="radiogroup" aria-label="今天最想做的事">
-              <label>
-                <input type="radio" name="action" value="買" required />
-                <span>買</span>
-              </label>
-              <label>
-                <input type="radio" name="action" value="賣" />
-                <span>賣</span>
-              </label>
-              <label>
-                <input type="radio" name="action" value="抱著" checked />
-                <span>繼續抱著</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>🎯 如果重來一次</legend>
-            <div class="choice-row replay-row" role="radiogroup" aria-label="如果重來一次">
-              <label>
-                <input type="radio" name="replayChoice" value="買更多" required />
-                <span>買更多</span>
-              </label>
-              <label>
-                <input type="radio" name="replayChoice" value="維持原本部位" />
-                <span>維持原本部位</span>
-              </label>
-              <label>
-                <input type="radio" name="replayChoice" value="買少一點" />
-                <span>買少一點</span>
-              </label>
-              <label>
-                <input type="radio" name="replayChoice" value="根本不買" />
-                <span>根本不買</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>🧠 心理標籤</legend>
-            <div class="tag-grid" aria-label="心理標籤">
-              <label>
-                <input type="checkbox" name="psycheTags" value="FOMO" />
-                <span>FOMO</span>
-              </label>
-              <label>
-                <input type="checkbox" name="psycheTags" value="貪婪" />
-                <span>貪婪</span>
-              </label>
-              <label>
-                <input type="checkbox" name="psycheTags" value="害怕" />
-                <span>害怕</span>
-              </label>
-              <label>
-                <input type="checkbox" name="psycheTags" value="後悔" />
-                <span>後悔</span>
-              </label>
-              <label>
-                <input type="checkbox" name="psycheTags" value="平靜" />
-                <span>平靜</span>
-              </label>
-              <label>
-                <input type="checkbox" name="psycheTags" value="興奮" />
-                <span>興奮</span>
-              </label>
-              <label>
-                <input type="checkbox" name="psycheTags" value="自信" />
-                <span>自信</span>
-              </label>
-              <label>
-                <input type="checkbox" name="psycheTags" value="懷疑" />
-                <span>懷疑</span>
-              </label>
-            </div>
-          </fieldset>
-
-          <label>
-            <span>一句心得</span>
-            <textarea
-              id="note"
-              name="note"
-              rows="5"
-              placeholder="今天的自己，在市場裡看見了什麼？"
-              required
-            ></textarea>
-          </label>
-
-          <label class="range-field regret-field">
-            <span><strong id="regretValue">後悔指數：5/10 🤔</strong></span>
-            <small aria-hidden="true">😌 🤔 😣 😭</small>
-            <input id="regret" name="regret" type="range" min="0" max="10" value="5" />
-          </label>
-
-          <button class="primary-button" id="saveButton" type="submit">儲存日記</button>
         </form>
       </section>
 
-      <section class="stats-panel" aria-labelledby="stats-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Telemetry</p>
-            <h2 id="stats-title">統計區</h2>
-          </div>
-        </div>
-
-        <div class="stat-grid">
-          <article>
-            <span>總日記數量</span>
-            <strong id="totalEntries">0</strong>
-          </article>
-          <article>
-            <span>平均心情</span>
-            <strong id="averageMood">0.0</strong>
-          </article>
-          <article>
-            <span>最高報酬率</span>
-            <strong id="highestReturn">0.00%</strong>
-          </article>
-          <article>
-            <span>最低報酬率</span>
-            <strong id="lowestReturn">0.00%</strong>
-          </article>
-          <article>
-            <span>平均報酬率</span>
-            <strong id="averageReturn">0.00%</strong>
-          </article>
-          <article>
-            <span>平均後悔指數</span>
-            <strong id="averageRegret">0.0</strong>
-          </article>
-          <article>
-            <span>最常選擇的動作</span>
-            <strong id="mostCommonAction">-</strong>
-          </article>
-          <article>
-            <span>最常出現的重來一次選項</span>
-            <strong id="mostCommonReplay">-</strong>
-          </article>
-          <article class="wide-stat">
-            <span>心理標籤排行榜</span>
-            <strong id="tagLeaderboard">-</strong>
-          </article>
-        </div>
-
-        <div class="action-bar">
-          <button class="secondary-button" id="analyzeButton" type="button">
-            📊 分析我的投資心理
-          </button>
-          <button class="secondary-button" id="exportCsvButton" type="button">📥 匯出 CSV</button>
-          <button class="secondary-button" id="exportJsonButton" type="button">
-            📥 匯出 JSON
-          </button>
-          <button class="secondary-button" id="exportReportButton" type="button">
-            📄 匯出完整投資心理報告
-          </button>
-        </div>
-
-        <div class="analysis-box" id="analysisBox" aria-live="polite">
-          累積幾篇日記後，這裡會顯示你的投資心理觀察。
-        </div>
-      </section>
-
-      <section class="charts-panel" aria-labelledby="charts-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Flight Data</p>
-            <h2 id="charts-title">圖表區</h2>
-          </div>
-        </div>
-
-        <div class="chart-grid">
-          <article class="chart-card">
-            <h3>報酬率變化圖</h3>
-            <div class="chart-frame">
-              <canvas id="returnChart"></canvas>
-            </div>
-          </article>
-          <article class="chart-card">
-            <h3>心情變化圖</h3>
-            <div class="chart-frame">
-              <canvas id="moodChart"></canvas>
-            </div>
-          </article>
-          <article class="chart-card">
-            <h3>後悔指數變化圖</h3>
-            <div class="chart-frame">
-              <canvas id="regretChart"></canvas>
-            </div>
-          </article>
-          <article class="chart-card">
-            <h3>心情 vs 報酬率散點圖</h3>
-            <div class="chart-frame">
-              <canvas id="moodReturnChart"></canvas>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="history-panel" aria-labelledby="history-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Archive</p>
-            <h2 id="history-title">歷史紀錄</h2>
-          </div>
-        </div>
-        <div id="historyList" class="history-list"></div>
-      </section>
+      <section id="dashboardView" class="view-panel" data-view-panel="dashboard"></section>
+      <section id="detailView" class="view-panel" data-view-panel="detail" hidden></section>
+      <section id="compareView" class="view-panel" data-view-panel="compare" hidden></section>
+      <section id="archiveView" class="view-panel" data-view-panel="archive" hidden></section>
     </main>
 
-    <template id="emptyStateTemplate">
-      <div class="empty-state">
-        <strong>尚未建立日記</strong>
-        <p>第一筆紀錄會成為你的投資心理基準線。</p>
-      </div>
-    </template>
-
-    <script src="app.js"></script>
+    <dialog id="recordDialog" class="modal">
+      <form id="recordForm" method="dialog" class="modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">紀錄編輯</p>
+            <h2 id="recordDialogTitle">編輯特典紀錄</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="button" data-close-dialog aria-label="關閉">×</button>
+        </div>
+        <div id="recordFormFields"></div>
+        <div class="form-actions">
+          <button class="secondary-button" value="cancel" type="button" data-close-dialog>取消</button>
+          <button class="primary-button" value="default" type="submit">儲存紀錄</button>
+        </div>
+      </form>
+    </dialog>
   </body>
 </html>

@@ -1,0 +1,22 @@
+{
+  "name": "偶像特典會心理分析工具",
+  "short_name": "推活研究室",
+  "description": "記錄與分析偶像特典會互動後的心情、滿意度、壓力與後悔。",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#090612",
+  "theme_color": "#ff8fc7",
+  "icons": [
+    {
+      "src": "public/hzme-icon.jpg",
+      "sizes": "400x400",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "public/apple-touch-icon.jpg",
+      "sizes": "400x400",
+      "type": "image/jpeg"
+    }
+  ]
+}

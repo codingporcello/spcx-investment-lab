@@ -1,131 +1,79 @@
-const CACHE_KEY = "spcx-psychology-journal-cache-v2";
-const LEGACY_STORAGE_KEY = "spcx-psychology-journal-v1";
-const SETTINGS_KEY = "spcx-google-sheets-settings-v1";
-const BACKUP_VERSION = 2;
+const STORAGE_KEY = "idol-tokuten-lab-v2";
+const LEGACY_STORAGE_KEY = "idol-tokuten-lab-v1";
+const SETTINGS_KEY = "idol-tokuten-lab-settings-v1";
 
-const DEFAULT_REPLAY_CHOICE = "維持原本部位";
-const DEFAULT_RECORD_TYPE = "盤中";
-const PSYCHE_TAGS = ["FOMO", "貪婪", "害怕", "後悔", "平靜", "興奮", "自信", "懷疑"];
-
-const moodEmojis = [
-  { max: 1, emoji: "😭" },
-  { max: 3, emoji: "😟" },
-  { max: 5, emoji: "😐" },
-  { max: 7, emoji: "🙂" },
-  { max: 9, emoji: "😆" },
-  { max: 10, emoji: "🚀" },
+const scoreFields = [
+  ["mood", "心情"],
+  ["satisfaction", "特典滿意度"],
+  ["stress", "壓力值"],
+  ["naturalness", "自然度"],
+  ["wantToMeetAgain", "想再見程度"],
+  ["regret", "後悔指數"],
+  ["liveOnlyInterest", "不特典也想看Live程度"],
 ];
 
-const regretEmojis = [
-  { max: 2, emoji: "😌" },
-  { max: 5, emoji: "🤔" },
-  { max: 8, emoji: "😣" },
-  { max: 10, emoji: "😭" },
+const initialIdols = [
+  { id: "idol-minami-sena", name: "南世菜", group: "AsIs", type: "情感型", memo: "", status: "active" },
+  {
+    id: "idol-morino-yumeha",
+    name: "森乃ゆめは",
+    group: "Merry BAD TUNE.",
+    type: "治癒型",
+    memo: "",
+    status: "active",
+  },
+  { id: "idol-hayakawa-nagisa", name: "早川渚紗", group: "HzMe", type: "探索型", memo: "", status: "active" },
+  { id: "idol-fukuma-ayane", name: "福間彩音", group: "ハルニシオン", type: "表演型", memo: "", status: "active" },
 ];
 
 const state = {
-  entries: [],
-  appsScriptUrl: "",
-  charts: {
-    returnChart: null,
-    moodChart: null,
-    regretChart: null,
-    moodReturnChart: null,
+  view: "dashboard",
+  detailId: null,
+  archiveFilters: {
+    idolId: "all",
+    group: "all",
+    sort: "desc",
   },
+  compareIds: [],
+  idols: [],
+  records: [],
+  appsScriptUrl: "",
+  syncStatus: "local",
+  charts: {},
 };
 
-const form = document.querySelector("#entryForm");
-const fields = {
-  id: document.querySelector("#entryId"),
-  date: document.querySelector("#date"),
-  price: document.querySelector("#price"),
-  returnRate: document.querySelector("#returnRate"),
-  mood: document.querySelector("#mood"),
-  note: document.querySelector("#note"),
-  regret: document.querySelector("#regret"),
-  stockSymbol: document.querySelector("#stockSymbol"),
-  sharesHeld: document.querySelector("#sharesHeld"),
-  averageCost: document.querySelector("#averageCost"),
+const views = {
+  dashboard: document.querySelector("#dashboardView"),
+  detail: document.querySelector("#detailView"),
+  compare: document.querySelector("#compareView"),
+  archive: document.querySelector("#archiveView"),
 };
 
-const output = {
-  moodValue: document.querySelector("#moodValue"),
-  regretValue: document.querySelector("#regretValue"),
-  totalEntries: document.querySelector("#totalEntries"),
-  averageMood: document.querySelector("#averageMood"),
-  highestReturn: document.querySelector("#highestReturn"),
-  lowestReturn: document.querySelector("#lowestReturn"),
-  averageReturn: document.querySelector("#averageReturn"),
-  averageRegret: document.querySelector("#averageRegret"),
-  mostCommonAction: document.querySelector("#mostCommonAction"),
-  mostCommonReplay: document.querySelector("#mostCommonReplay"),
-  tagLeaderboard: document.querySelector("#tagLeaderboard"),
-  historyList: document.querySelector("#historyList"),
-  analysisBox: document.querySelector("#analysisBox"),
-  syncStatus: document.querySelector("#syncStatus"),
-};
-
-const controls = {
-  appsScriptUrl: document.querySelector("#appsScriptUrl"),
-  saveSettingsButton: document.querySelector("#saveSettingsButton"),
-  refreshSheetsButton: document.querySelector("#refreshSheetsButton"),
-  settingsPanel: document.querySelector(".settings-panel"),
-  settingsContent: document.querySelector("#settingsContent"),
-  settingsToggleButton: document.querySelector("#settingsToggleButton"),
-  settingsToggleAction: document.querySelector(".settings-toggle-action"),
-};
+const navButtons = [...document.querySelectorAll(".nav-button")];
+const recordDialog = document.querySelector("#recordDialog");
+const recordForm = document.querySelector("#recordForm");
+const recordFormFields = document.querySelector("#recordFormFields");
+const recordDialogTitle = document.querySelector("#recordDialogTitle");
+const syncStatusLabel = document.querySelector("#syncStatus");
+const syncSettingsForm = document.querySelector("#syncSettingsForm");
+const appsScriptUrlInput = document.querySelector("#appsScriptUrl");
+const refreshSheetsButton = document.querySelector("#refreshSheetsButton");
 
 function todayString() {
   const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
-function parseNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-}
-
-function formatNumber(value, decimals = 2) {
-  return Number(value).toLocaleString("zh-TW", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
-
-function formatPrice(value) {
-  return formatNumber(value, 3);
-}
-
-function formatPercent(value) {
-  return `${formatNumber(value)}%`;
-}
-
-function formatSignedPercent(value) {
-  const number = parseNumber(value);
-  if (number > 0) return `+${formatPercent(number)}`;
-  return formatPercent(number);
-}
-
-function returnToneClass(value) {
-  const number = parseNumber(value);
-  if (number > 0) return "return-positive";
-  if (number < 0) return "return-negative";
-  return "return-neutral";
-}
-
-function formatDate(dateString) {
-  return dateString ? dateString.replaceAll("-", "/") : "-";
-}
-
-function displayAction(action) {
-  return action === "抱著" ? "繼續抱著" : action;
+function uid(prefix) {
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -133,827 +81,916 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function emojiFor(value, scale) {
-  return scale.find((item) => value <= item.max)?.emoji || scale.at(-1).emoji;
+function numberValue(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function normalizeTags(value) {
-  const tags = Array.isArray(value)
-    ? value
-    : String(value || "")
-        .split(/[、,|]/)
-        .map((tag) => tag.trim());
-  return [...new Set(tags.filter((tag) => PSYCHE_TAGS.includes(tag)))];
+function clampScore(value) {
+  return Math.max(0, Math.min(10, numberValue(value)));
 }
 
-function formatTags(tags) {
-  const normalized = normalizeTags(tags);
-  return normalized.length ? normalized.join("、") : "未標記";
+function average(values) {
+  const numbers = values.map(numberValue).filter((value) => Number.isFinite(value));
+  if (!numbers.length) return null;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
 }
 
-function normalizeTimestamp(value) {
-  if (!value) return Date.now();
-  if (typeof value === "number") return value;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Date.now();
+function formatScore(value) {
+  return value === null || value === undefined ? "-" : numberValue(value).toFixed(1);
 }
 
-function normalizeEntry(entry) {
+function formatYen(value) {
+  return `¥${Math.round(numberValue(value)).toLocaleString("ja-JP")}`;
+}
+
+function formatDate(date) {
+  return date ? String(date).replaceAll("-", "/") : "-";
+}
+
+function byDateAsc(a, b) {
+  return new Date(a.date) - new Date(b.date) || numberValue(a.createdAt) - numberValue(b.createdAt);
+}
+
+function byDateDesc(a, b) {
+  return new Date(b.date) - new Date(a.date) || numberValue(b.createdAt) - numberValue(a.createdAt);
+}
+
+function recordsForIdol(idolId) {
+  return state.records.filter((record) => record.idolId === idolId).sort(byDateAsc);
+}
+
+function getIdol(idolId) {
+  return state.idols.find((idol) => idol.id === idolId);
+}
+
+function normalizeIdol(idol) {
   const now = Date.now();
   return {
-    id: entry.id || crypto.randomUUID(),
-    date: entry.date || todayString(),
-    recordType: entry.recordType || DEFAULT_RECORD_TYPE,
-    price: parseNumber(entry.price ?? entry.spcxPrice),
-    returnRate: parseNumber(entry.returnRate),
-    mood: parseNumber(entry.mood ?? entry.moodScore),
-    action: entry.action || "抱著",
-    replayChoice: entry.replayChoice || entry.redoChoice || DEFAULT_REPLAY_CHOICE,
-    psycheTags: normalizeTags(entry.psycheTags),
-    regret: parseNumber(entry.regret ?? entry.regretScore),
-    note: entry.note || "",
-    stockSymbol: entry.stockSymbol || "SPCX",
-    sharesHeld: entry.sharesHeld ?? null,
-    averageCost: entry.averageCost ?? null,
-    deleted: entry.deleted === true || String(entry.deleted).toUpperCase() === "TRUE",
-    deletedAt: entry.deletedAt ? normalizeTimestamp(entry.deletedAt) : null,
-    createdAt: entry.createdAt ? normalizeTimestamp(entry.createdAt) : now,
-    updatedAt: entry.updatedAt ? normalizeTimestamp(entry.updatedAt) : now,
+    id: String(idol.id || uid("idol")),
+    name: String(idol.name || "").trim(),
+    group: String(idol.group || "").trim(),
+    type: String(idol.type || "").trim(),
+    memo: String(idol.memo || ""),
+    status: idol.status || "active",
+    createdAt: numberValue(idol.createdAt || now),
+    updatedAt: numberValue(idol.updatedAt || now),
   };
 }
 
-function toSheetEntry(entry) {
-  const normalized = normalizeEntry(entry);
-  return {
-    id: normalized.id,
-    date: normalized.date,
-    recordType: normalized.recordType,
-    spcxPrice: normalized.price,
-    returnRate: normalized.returnRate,
-    moodScore: normalized.mood,
-    action: normalized.action,
-    redoChoice: normalized.replayChoice,
-    psycheTags: normalized.psycheTags.join("、"),
-    regretScore: normalized.regret,
-    note: normalized.note,
-    createdAt: normalized.createdAt,
-    updatedAt: normalized.updatedAt,
-    deleted: normalized.deleted,
-    deletedAt: normalized.deletedAt,
+function normalizeRecord(record) {
+  const now = Date.now();
+  const normalized = {
+    id: String(record.id || uid("record")),
+    idolId: String(record.idolId || ""),
+    date: record.date ? String(record.date).slice(0, 10) : todayString(),
+    chekiCount: Math.max(0, Math.round(numberValue(record.chekiCount))),
+    cost: Math.max(0, Math.round(numberValue(record.cost))),
+    summary: String(record.summary || ""),
+    memo: String(record.memo || ""),
+    createdAt: numberValue(record.createdAt || now),
+    updatedAt: numberValue(record.updatedAt || now),
   };
-}
 
-function activeEntries() {
-  return state.entries.filter((entry) => !entry.deleted);
-}
-
-function sortEntries(entries, ascending = false) {
-  return [...entries].sort((a, b) => {
-    const dateCompare = new Date(a.date) - new Date(b.date);
-    if (dateCompare !== 0) return ascending ? dateCompare : -dateCompare;
-    return ascending ? a.createdAt - b.createdAt : b.createdAt - a.createdAt;
+  scoreFields.forEach(([key]) => {
+    normalized[key] = clampScore(record[key] ?? 5);
   });
+
+  return normalized;
 }
 
-function setSyncStatus(status) {
-  const labels = {
-    synced: "🟢 已同步",
-    syncing: "🟡 同步中",
-    offline: "🔴 無法連線",
-  };
-  output.syncStatus.textContent = labels[status] || labels.offline;
+function readLocalData() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY) || "{}");
+    const idols = Array.isArray(saved.idols) && saved.idols.length ? saved.idols.map(normalizeIdol) : initialIdols.map(normalizeIdol);
+    const idolIds = new Set(idols.map((idol) => idol.id));
+    const records = Array.isArray(saved.records)
+      ? saved.records.map(normalizeRecord).filter((record) => idolIds.has(record.idolId))
+      : [];
+    return { idols, records };
+  } catch {
+    return { idols: initialIdols.map(normalizeIdol), records: [] };
+  }
 }
 
 function loadSettings() {
+  const configUrl = window.IDOL_LAB_CONFIG?.GOOGLE_APPS_SCRIPT_URL || "";
   try {
-    const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    state.appsScriptUrl = settings.appsScriptUrl || "";
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    state.appsScriptUrl = saved.appsScriptUrl || configUrl;
   } catch {
-    state.appsScriptUrl = "";
+    state.appsScriptUrl = configUrl;
   }
-  controls.appsScriptUrl.value = state.appsScriptUrl;
+  appsScriptUrlInput.value = state.appsScriptUrl;
 }
 
 function saveSettings() {
-  state.appsScriptUrl = controls.appsScriptUrl.value.trim();
+  state.appsScriptUrl = appsScriptUrlInput.value.trim();
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ appsScriptUrl: state.appsScriptUrl }));
-  loadFromSheets();
 }
 
-function setSettingsExpanded(isExpanded) {
-  controls.settingsPanel.classList.toggle("settings-collapsed", !isExpanded);
-  controls.settingsContent.hidden = !isExpanded;
-  controls.settingsToggleButton.setAttribute("aria-expanded", String(isExpanded));
-  controls.settingsToggleAction.textContent = isExpanded ? "收起設定" : "打開設定";
+function saveState() {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      idols: state.idols.map(normalizeIdol),
+      records: state.records.map(normalizeRecord),
+    }),
+  );
 }
 
-function toggleSettings() {
-  setSettingsExpanded(controls.settingsContent.hidden);
+function setSyncStatus(status) {
+  state.syncStatus = status;
+  const labels = {
+    synced: "已同步",
+    syncing: "同步中",
+    failed: "同步失敗",
+    local: "本機模式",
+  };
+  syncStatusLabel.textContent = labels[status] || labels.local;
+  syncStatusLabel.dataset.status = status;
 }
 
-function readCache() {
+async function sheetsRequest(payload) {
+  if (!state.appsScriptUrl) throw new Error("尚未設定 Apps Script URL");
+  let data = null;
+
   try {
-    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
-    if (Array.isArray(cached)) return cached.map(normalizeEntry);
-  } catch {
-    // Fall through to legacy cache.
-  }
-
-  try {
-    const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) || "[]");
-    return Array.isArray(legacy) ? legacy.map(normalizeEntry) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeCache() {
-  localStorage.setItem(CACHE_KEY, JSON.stringify(state.entries.map(normalizeEntry)));
-}
-
-async function sheetsRequest(action, payload = {}) {
-  if (!state.appsScriptUrl) {
-    throw new Error("Missing Apps Script URL");
-  }
-
-  if (action === "list") {
+    const response = await fetch(state.appsScriptUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(`Google Sheets 回應錯誤：${response.status}`);
+    data = await response.json();
+  } catch (error) {
     const url = new URL(state.appsScriptUrl);
-    url.searchParams.set("action", "list");
-    url.searchParams.set("_", String(Date.now()));
-    const response = await fetch(url.toString(), { method: "GET" });
-    if (!response.ok) throw new Error("Google Sheets read failed");
-    const result = await response.json();
-    if (result.ok === false) throw new Error(result.error || "Google Sheets read failed");
-    return result;
+    url.searchParams.set("payload", JSON.stringify(payload));
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error(`Google Sheets 回應錯誤：${response.status}`);
+    data = await response.json();
   }
 
-  const response = await fetch(state.appsScriptUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ action, ...payload }),
-  });
-  if (!response.ok) throw new Error("Google Sheets write failed");
-  const result = await response.json();
-  if (result.ok === false) throw new Error(result.error || "Google Sheets write failed");
-  return result;
+  if (!data.ok) throw new Error(data.error || "Google Sheets 同步失敗");
+  return data;
 }
 
 async function loadFromSheets() {
   if (!state.appsScriptUrl) {
-    state.entries = readCache();
-    setSyncStatus("offline");
+    setSyncStatus("local");
+    return false;
+  }
+
+  setSyncStatus("syncing");
+  try {
+    const data = await sheetsRequest({ action: "list" });
+    const remoteIdols = Array.isArray(data.idols) ? data.idols.map(normalizeIdol) : [];
+    const remoteRecords = Array.isArray(data.records) ? data.records.map(normalizeRecord) : [];
+
+    if (remoteIdols.length || remoteRecords.length) {
+      const idolIds = new Set(remoteIdols.map((idol) => idol.id));
+      state.idols = remoteIdols.length ? remoteIdols : initialIdols.map(normalizeIdol);
+      state.records = remoteRecords.filter((record) => idolIds.has(record.idolId));
+      state.compareIds = state.idols.slice(0, 3).map((idol) => idol.id);
+      saveState();
+    } else {
+      await syncToSheets();
+      return true;
+    }
+
+    setSyncStatus("synced");
     render();
-    output.analysisBox.textContent = "請先填入 Apps Script Web App URL，才能使用 Google Sheets 雲端資料。";
+    return true;
+  } catch (error) {
+    console.warn(error);
+    setSyncStatus("failed");
+    return false;
+  }
+}
+
+async function syncToSheets() {
+  if (!state.appsScriptUrl) {
+    setSyncStatus("local");
     return;
   }
 
   setSyncStatus("syncing");
   try {
-    const result = await sheetsRequest("list");
-    state.entries = Array.isArray(result.entries) ? result.entries.map(normalizeEntry) : [];
-    writeCache();
+    const data = await sheetsRequest({
+      action: "sync",
+      idols: state.idols.map(normalizeIdol),
+      records: state.records.map(normalizeRecord),
+    });
+    state.idols = data.idols.map(normalizeIdol);
+    state.records = data.records.map(normalizeRecord);
+    saveState();
     setSyncStatus("synced");
     render();
   } catch (error) {
-    state.entries = readCache();
-    setSyncStatus("offline");
-    render();
-    output.analysisBox.textContent = "無法連線 Google Sheets，已顯示本機快取資料。";
+    console.warn(error);
+    setSyncStatus("failed");
   }
 }
 
-function getSelectedRadio(name, fallback) {
-  return form.querySelector(`input[name="${name}"]:checked`)?.value || fallback;
+function persistAndSync() {
+  saveState();
+  render();
+  void syncToSheets();
 }
 
-function setSelectedRadio(name, value) {
-  const input = form.querySelector(`input[name="${name}"][value="${value}"]`);
-  if (input) input.checked = true;
-}
-
-function getSelectedAction() {
-  return getSelectedRadio("action", "抱著");
-}
-
-function getSelectedRecordType() {
-  return getSelectedRadio("recordType", DEFAULT_RECORD_TYPE);
-}
-
-function getSelectedReplayChoice() {
-  return getSelectedRadio("replayChoice", DEFAULT_REPLAY_CHOICE);
-}
-
-function getSelectedTags() {
-  return [...form.querySelectorAll('input[name="psycheTags"]:checked')].map((input) => input.value);
-}
-
-function setSelectedTags(tags) {
-  const normalized = normalizeTags(tags);
-  form.querySelectorAll('input[name="psycheTags"]').forEach((input) => {
-    input.checked = normalized.includes(input.value);
-  });
-}
-
-function resetForm() {
-  form.reset();
-  fields.id.value = "";
-  fields.date.value = todayString();
-  fields.mood.value = 5;
-  fields.regret.value = 5;
-  fields.stockSymbol.value = "SPCX";
-  fields.sharesHeld.value = "";
-  fields.averageCost.value = "";
-  setSelectedRadio("recordType", DEFAULT_RECORD_TYPE);
-  setSelectedRadio("action", "抱著");
-  setSelectedRadio("replayChoice", DEFAULT_REPLAY_CHOICE);
-  setSelectedTags([]);
-  updateRangeLabels();
-  document.querySelector("#saveButton").textContent = "儲存日記";
-}
-
-function updateRangeLabels() {
-  const mood = parseNumber(fields.mood.value);
-  const regret = parseNumber(fields.regret.value);
-  output.moodValue.textContent = `今日心情：${mood}/10 ${emojiFor(mood, moodEmojis)}`;
-  output.regretValue.textContent = `後悔指數：${regret}/10 ${emojiFor(regret, regretEmojis)}`;
-}
-
-function useYesterdayData() {
-  const latest = sortEntries(activeEntries())[0];
-  if (!latest) {
-    output.analysisBox.textContent = "目前還沒有可複製的日記。先建立第一筆心理紀錄。";
-    return;
-  }
-
-  fields.id.value = "";
-  fields.date.value = todayString();
-  fields.price.value = "";
-  fields.returnRate.value = latest.returnRate;
-  fields.mood.value = latest.mood;
-  fields.note.value = latest.note;
-  fields.regret.value = latest.regret;
-  fields.stockSymbol.value = latest.stockSymbol || "SPCX";
-  fields.sharesHeld.value = latest.sharesHeld ?? "";
-  fields.averageCost.value = latest.averageCost ?? "";
-  setSelectedRadio("recordType", latest.recordType || DEFAULT_RECORD_TYPE);
-  setSelectedRadio("action", latest.action);
-  setSelectedRadio("replayChoice", latest.replayChoice || DEFAULT_REPLAY_CHOICE);
-  setSelectedTags(latest.psycheTags);
-  updateRangeLabels();
-  document.querySelector("#saveButton").textContent = "儲存日記";
-  window.alert("已載入最近一筆日記資料");
-}
-
-async function upsertEntry(event) {
-  event.preventDefault();
-  if (!state.appsScriptUrl) {
-    window.alert("請先設定 Apps Script Web App URL。");
-    return;
-  }
-
-  const id = fields.id.value || crypto.randomUUID();
-  const existing = state.entries.find((entry) => entry.id === id);
-  const now = Date.now();
-  const entry = normalizeEntry({
-    id,
-    date: fields.date.value,
-    recordType: getSelectedRecordType(),
-    price: parseNumber(fields.price.value),
-    returnRate: parseNumber(fields.returnRate.value),
-    mood: parseNumber(fields.mood.value),
-    action: getSelectedAction(),
-    replayChoice: getSelectedReplayChoice(),
-    psycheTags: getSelectedTags(),
-    note: fields.note.value.trim(),
-    regret: parseNumber(fields.regret.value),
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-  });
-
-  setSyncStatus("syncing");
-  try {
-    await sheetsRequest(existing ? "update" : "create", { entry: toSheetEntry(entry) });
-    resetForm();
-    await loadFromSheets();
-  } catch (error) {
-    setSyncStatus("offline");
-    window.alert("無法寫入 Google Sheets，請檢查 Apps Script URL 或網路連線。");
-  }
-}
-
-function editEntry(id) {
-  const entry = state.entries.find((item) => item.id === id && !item.deleted);
-  if (!entry) return;
-
-  fields.id.value = entry.id;
-  fields.date.value = entry.date;
-  fields.price.value = entry.price;
-  fields.returnRate.value = entry.returnRate;
-  fields.mood.value = entry.mood;
-  fields.note.value = entry.note;
-  fields.regret.value = entry.regret;
-  fields.stockSymbol.value = entry.stockSymbol || "SPCX";
-  fields.sharesHeld.value = entry.sharesHeld ?? "";
-  fields.averageCost.value = entry.averageCost ?? "";
-  setSelectedRadio("recordType", entry.recordType || DEFAULT_RECORD_TYPE);
-  setSelectedRadio("action", entry.action);
-  setSelectedRadio("replayChoice", entry.replayChoice || DEFAULT_REPLAY_CHOICE);
-  setSelectedTags(entry.psycheTags);
-  updateRangeLabels();
-  document.querySelector("#saveButton").textContent = "更新日記";
-  form.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-async function deleteEntry(id) {
-  const entry = state.entries.find((item) => item.id === id && !item.deleted);
-  if (!entry) return;
-
-  const confirmed = window.confirm(`確定刪除 ${entry.date} 的日記嗎？`);
-  if (!confirmed) return;
-
-  setSyncStatus("syncing");
-  try {
-    await sheetsRequest("delete", { id });
-    await loadFromSheets();
-  } catch (error) {
-    setSyncStatus("offline");
-    window.alert("無法刪除 Google Sheets 資料，請檢查連線後再試。");
-  }
-}
-
-function mostCommon(values) {
-  const counts = values.reduce((acc, value) => {
-    acc[value] = (acc[value] || 0) + 1;
-    return acc;
-  }, {});
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
-}
-
-function countTags(entries) {
-  return entries
-    .flatMap((entry) => normalizeTags(entry.psycheTags))
-    .reduce((acc, tag) => {
-      acc[tag] = (acc[tag] || 0) + 1;
-      return acc;
-    }, {});
-}
-
-function rankedTags(entries) {
-  return Object.entries(countTags(entries)).sort((a, b) => b[1] - a[1]);
-}
-
-function formatTagLeaderboard(entries) {
-  const ranking = rankedTags(entries);
-  return ranking.length ? ranking.map(([tag, count]) => `${tag}：${count}次`).join("\n") : "-";
-}
-
-function average(values) {
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-}
-
-function calculateStats() {
-  const entries = activeEntries();
-  const total = entries.length;
-  if (!total) {
-    return {
-      total,
-      averageMood: 0,
-      highestReturn: 0,
-      lowestReturn: 0,
-      averageReturn: 0,
-      averageRegret: 0,
-      mostCommonAction: "-",
-      mostCommonReplay: "-",
-      tagLeaderboard: "-",
-    };
-  }
-
-  const returns = entries.map((entry) => entry.returnRate);
+function getMetrics(idolId) {
+  const records = recordsForIdol(idolId);
+  const metric = (key) => average(records.map((record) => record[key]));
   return {
-    total,
-    averageMood: average(entries.map((entry) => entry.mood)),
-    highestReturn: Math.max(...returns),
-    lowestReturn: Math.min(...returns),
-    averageReturn: average(returns),
-    averageRegret: average(entries.map((entry) => entry.regret)),
-    mostCommonAction: mostCommon(entries.map((entry) => entry.action)),
-    mostCommonReplay: mostCommon(entries.map((entry) => entry.replayChoice || DEFAULT_REPLAY_CHOICE)),
-    tagLeaderboard: formatTagLeaderboard(entries),
+    count: records.length,
+    mood: metric("mood"),
+    satisfaction: metric("satisfaction"),
+    stress: metric("stress"),
+    regret: metric("regret"),
+    wantToMeetAgain: metric("wantToMeetAgain"),
+    liveOnlyInterest: metric("liveOnlyInterest"),
+    cost: records.reduce((sum, record) => sum + numberValue(record.cost), 0),
+    trend: getTrend(records),
   };
 }
 
-function renderStats() {
-  const stats = calculateStats();
-  output.totalEntries.textContent = stats.total;
-  output.averageMood.textContent = stats.averageMood.toFixed(1);
-  output.highestReturn.textContent = formatPercent(stats.highestReturn);
-  output.lowestReturn.textContent = formatPercent(stats.lowestReturn);
-  output.averageReturn.textContent = formatPercent(stats.averageReturn);
-  output.averageRegret.textContent = stats.averageRegret.toFixed(1);
-  output.mostCommonAction.textContent = displayAction(stats.mostCommonAction);
-  output.mostCommonReplay.textContent = stats.mostCommonReplay;
-  output.tagLeaderboard.textContent = stats.tagLeaderboard;
+function getTrend(records) {
+  if (records.length < 3) return "資料不足";
+  const sorted = [...records].sort(byDateAsc);
+  const recent = sorted.slice(-3);
+  const values = recent.map(
+    (record) =>
+      record.mood * 0.35 +
+      record.satisfaction * 0.25 +
+      record.wantToMeetAgain * 0.2 +
+      record.liveOnlyInterest * 0.2 -
+      record.stress * 0.18 -
+      record.regret * 0.18,
+  );
+  const spread = Math.max(...values) - Math.min(...values);
+  const slope = values.at(-1) - values[0];
+  if (spread >= 3.2) return "高波動";
+  if (slope >= 1.1) return "上升";
+  if (slope <= -1.1) return "冷卻";
+  return "穩定";
 }
 
-function renderHistory() {
-  output.historyList.innerHTML = "";
-  const entries = activeEntries();
-
-  if (!entries.length) {
-    const template = document.querySelector("#emptyStateTemplate");
-    output.historyList.append(template.content.cloneNode(true));
-    return;
-  }
-
-  sortEntries(entries).forEach((entry) => {
-    const card = document.createElement("article");
-    card.className = "journal-card";
-    card.innerHTML = `
-      <div class="journal-divider" aria-hidden="true"></div>
-      <div class="journal-line"><span>📅</span><strong>${formatDate(entry.date)}</strong></div>
-      <div class="journal-line"><span>🕒</span><div>記錄類型：<strong>${escapeHtml(entry.recordType || DEFAULT_RECORD_TYPE)}</strong></div></div>
-      <div class="journal-line"><span>💰</span><div>SPCX：<strong>${formatPrice(entry.price)}</strong></div></div>
-      <div class="journal-line"><span>📈</span><div>報酬率：<strong class="${returnToneClass(entry.returnRate)}">${formatSignedPercent(entry.returnRate)}</strong></div></div>
-      <div class="journal-line"><span>${emojiFor(entry.mood, moodEmojis)}</span><div>心情：<strong>${entry.mood}</strong></div></div>
-      <div class="journal-line"><span>🚀</span><div>動作：<strong>${displayAction(entry.action)}</strong></div></div>
-      <div class="journal-line"><span>🎯</span><div>重來一次：<strong>${entry.replayChoice || DEFAULT_REPLAY_CHOICE}</strong></div></div>
-      <div class="journal-line"><span>🧠</span><div>心理標籤：<strong>${escapeHtml(formatTags(entry.psycheTags))}</strong></div></div>
-      <div class="journal-line"><span>${emojiFor(entry.regret, regretEmojis)}</span><div>後悔指數：<strong>${entry.regret}</strong></div></div>
-      <div class="journal-line"><span>💬</span><div>心得：</div></div>
-      <p class="journal-note">${escapeHtml(entry.note)}</p>
-      <div class="card-actions">
-        <button class="card-button" type="button" data-action="edit">✏️ 編輯</button>
-        <button class="card-button delete" type="button" data-action="delete">🗑️ 刪除</button>
-      </div>
-      <div class="journal-divider" aria-hidden="true"></div>
-    `;
-
-    card.querySelector('[data-action="edit"]').addEventListener("click", () => editEntry(entry.id));
-    card
-      .querySelector('[data-action="delete"]')
-      .addEventListener("click", () => deleteEntry(entry.id));
-    output.historyList.append(card);
-  });
-}
-
-function chartOptions(title, overrides = {}) {
+function statusClass(status) {
   return {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: "#05070d",
-        borderColor: "#263446",
-        borderWidth: 1,
-        titleColor: "#ffffff",
-        bodyColor: "#c8d0da",
-      },
-      title: { display: false, text: title },
-    },
-    scales: {
-      x: {
-        title: { display: Boolean(overrides.xTitle), text: overrides.xTitle, color: "#c8d0da" },
-        ticks: { color: "#9aa8b8", maxRotation: 0 },
-        grid: { color: "rgba(200, 208, 218, 0.08)" },
-      },
-      y: {
-        title: { display: Boolean(overrides.yTitle), text: overrides.yTitle, color: "#c8d0da" },
-        min: overrides.yMin,
-        max: overrides.yMax,
-        ticks: { color: "#9aa8b8" },
-        grid: { color: "rgba(200, 208, 218, 0.08)" },
-      },
-    },
-  };
+    上升: "status-up",
+    冷卻: "status-cool",
+    高波動: "status-volatile",
+    資料不足: "status-low",
+  }[status] || "";
 }
 
-function makeDataset(label, data, color) {
+function inferMainValue(records) {
+  const metrics = {
+    情緒安定: 10 - numberValue(average(records.map((record) => record.stress))),
+    新鮮感: numberValue(average(records.map((record) => record.naturalness))),
+    表演滿足: numberValue(average(records.map((record) => record.liveOnlyInterest))),
+    特典互動: numberValue(average(records.map((record) => record.satisfaction))),
+    習慣性消費:
+      numberValue(average(records.map((record) => record.wantToMeetAgain))) -
+      numberValue(average(records.map((record) => record.satisfaction))) +
+      numberValue(average(records.map((record) => record.regret))) * 0.45,
+  };
+  return Object.entries(metrics).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function analyzeIdol(idolId) {
+  const records = recordsForIdol(idolId);
+  if (records.length < 3) return null;
+  const metric = (key) => average(records.map((record) => record[key]));
+  const stress = numberValue(metric("stress"));
+  const regret = numberValue(metric("regret"));
+  const satisfaction = numberValue(metric("satisfaction"));
+  const liveOnlyInterest = numberValue(metric("liveOnlyInterest"));
+  const wantToMeetAgain = numberValue(metric("wantToMeetAgain"));
+
   return {
-    label,
-    data,
-    borderColor: color,
-    backgroundColor: `${color}22`,
-    pointBackgroundColor: "#ffffff",
-    pointBorderColor: color,
-    pointRadius: 4,
-    pointHoverRadius: 6,
-    borderWidth: 2,
-    tension: 0.32,
-    fill: true,
+    status: getTrend(records),
+    mainValue: inferMainValue(records),
+    highStress: stress >= 6.5 || records.slice(-3).some((record) => record.stress >= 8),
+    regretSpend: regret >= 6 && satisfaction <= 6.2,
+    reduceFrequency: stress >= 6.5 || regret >= 6.5 || (wantToMeetAgain >= 7 && satisfaction < 5.5),
+    liveOnlyType: liveOnlyInterest >= 7,
   };
-}
-
-function renderCharts() {
-  if (typeof Chart === "undefined") return;
-
-  const ordered = sortEntries(activeEntries(), true);
-  const labels = ordered.map((entry) => entry.date);
-  const chartConfigs = [
-    {
-      key: "returnChart",
-      element: "returnChart",
-      label: "總報酬率 %",
-      data: ordered.map((entry) => entry.returnRate),
-      color: "#2d8cff",
-      options: chartOptions("總報酬率 %", { yTitle: "總報酬率 %" }),
-    },
-    {
-      key: "moodChart",
-      element: "moodChart",
-      label: "心情分數",
-      data: ordered.map((entry) => entry.mood),
-      color: "#78d4a5",
-      options: chartOptions("心情分數", { yMin: 0, yMax: 10, yTitle: "心情分數" }),
-    },
-    {
-      key: "regretChart",
-      element: "regretChart",
-      label: "後悔指數",
-      data: ordered.map((entry) => entry.regret),
-      color: "#c8d0da",
-      options: chartOptions("後悔指數", { yMin: 0, yMax: 10, yTitle: "後悔指數" }),
-    },
-  ];
-
-  chartConfigs.forEach((config) => {
-    const ctx = document.querySelector(`#${config.element}`);
-    if (state.charts[config.key]) state.charts[config.key].destroy();
-    state.charts[config.key] = new Chart(ctx, {
-      type: "line",
-      data: { labels, datasets: [makeDataset(config.label, config.data, config.color)] },
-      options: config.options,
-    });
-  });
-
-  const scatterCtx = document.querySelector("#moodReturnChart");
-  if (state.charts.moodReturnChart) state.charts.moodReturnChart.destroy();
-  state.charts.moodReturnChart = new Chart(scatterCtx, {
-    type: "scatter",
-    data: {
-      datasets: [
-        {
-          label: "心情 vs 報酬率",
-          data: ordered.map((entry) => ({ x: entry.returnRate, y: entry.mood })),
-          borderColor: "#ffffff",
-          backgroundColor: "rgba(45, 140, 255, 0.72)",
-          pointRadius: 5,
-          pointHoverRadius: 7,
-        },
-      ],
-    },
-    options: chartOptions("心情 vs 報酬率", {
-      xTitle: "報酬率 %",
-      yTitle: "心情分數",
-      yMin: 0,
-      yMax: 10,
-    }),
-  });
-}
-
-function correlation(entries, xKey, yKey) {
-  if (entries.length < 2) return 0;
-  const xs = entries.map((entry) => entry[xKey]);
-  const ys = entries.map((entry) => entry[yKey]);
-  const avgX = average(xs);
-  const avgY = average(ys);
-  const numerator = entries.reduce(
-    (sum, _entry, index) => sum + (xs[index] - avgX) * (ys[index] - avgY),
-    0,
-  );
-  const denominatorX = Math.sqrt(xs.reduce((sum, value) => sum + (value - avgX) ** 2, 0));
-  const denominatorY = Math.sqrt(ys.reduce((sum, value) => sum + (value - avgY) ** 2, 0));
-  if (!denominatorX || !denominatorY) return 0;
-  return numerator / (denominatorX * denominatorY);
-}
-
-function describeCorrelation(value) {
-  const strength = Math.abs(value);
-  if (strength >= 0.65) return value > 0 ? "明顯正相關" : "明顯負相關";
-  if (strength >= 0.35) return value > 0 ? "中度正相關" : "中度負相關";
-  if (strength >= 0.15) return value > 0 ? "輕微正相關" : "輕微負相關";
-  return "關聯不明顯";
-}
-
-function percentage(part, total) {
-  return total ? Math.round((part / total) * 100) : 0;
-}
-
-function generatePsychologyInsights() {
-  const entries = sortEntries(activeEntries(), true);
-  if (entries.length < 2) return ["至少需要兩篇日記，才能看出心理變化的方向。"];
-
-  const stats = calculateStats();
-  const insights = [];
-  const holdCount = entries.filter((entry) => entry.action === "抱著").length;
-  const sellCount = entries.filter((entry) => entry.action === "賣").length;
-  const highReturnEntries = entries.filter((entry) => entry.returnRate >= 20);
-  const lossEntries = entries.filter((entry) => entry.returnRate < 0);
-  const returnMoodCorrelation = correlation(entries, "returnRate", "mood");
-  const returnRegretCorrelation = correlation(entries, "returnRate", "regret");
-  const topTag = rankedTags(entries)[0];
-
-  insights.push(
-    `你有 ${percentage(holdCount, entries.length)}% 的時間選擇「繼續抱著」，目前最常出現的操作傾向是「${displayAction(
-      stats.mostCommonAction,
-    )}」。`,
-  );
-
-  if (topTag) {
-    const [tag, count] = topTag;
-    insights.push(
-      `你最常出現的心理標籤是「${tag}」，出現比例 ${percentage(
-        count,
-        entries.length,
-      )}%。這是目前最值得持續觀察的投資心理訊號。`,
-    );
-  }
-
-  if (highReturnEntries.length) {
-    const highReturnRegret = average(highReturnEntries.map((entry) => entry.regret));
-    const delta = highReturnRegret - stats.averageRegret;
-    insights.push(
-      delta >= 1
-        ? `當報酬率超過20%後，你的後悔指數平均為 ${highReturnRegret.toFixed(
-            1,
-          )}，比整體平均高 ${delta.toFixed(1)}。`
-        : `報酬率超過20%的紀錄中，後悔指數平均為 ${highReturnRegret.toFixed(
-            1,
-          )}，和整體平均 ${stats.averageRegret.toFixed(1)} 接近。`,
-    );
-  }
-
-  insights.push(
-    `你的平均心情與報酬率呈現「${describeCorrelation(
-      returnMoodCorrelation,
-    )}」（相關係數 ${returnMoodCorrelation.toFixed(2)}）。`,
-  );
-  insights.push(
-    `報酬率與後悔指數呈現「${describeCorrelation(
-      returnRegretCorrelation,
-    )}」（相關係數 ${returnRegretCorrelation.toFixed(2)}）。`,
-  );
-
-  if (lossEntries.length) {
-    const lossSellRate = percentage(
-      lossEntries.filter((entry) => entry.action === "賣").length,
-      lossEntries.length,
-    );
-    const overallSellRate = percentage(sellCount, entries.length);
-    insights.push(
-      lossSellRate <= overallSellRate
-        ? `虧損時，你想賣出的比例是 ${lossSellRate}%，低於或接近整體賣出傾向 ${overallSellRate}%。`
-        : `虧損時，你想賣出的比例是 ${lossSellRate}%，高於整體賣出傾向 ${overallSellRate}%。`,
-    );
-  }
-
-  insights.push(`如果重來一次，你最常選擇「${stats.mostCommonReplay}」。`);
-  return insights;
-}
-
-function analyzePsychology() {
-  output.analysisBox.innerHTML = generatePsychologyInsights()
-    .map((line) => `<p>${escapeHtml(line)}</p>`)
-    .join("");
-}
-
-function downloadFile(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function exportCsv() {
-  const headers = [
-    "id",
-    "date",
-    "recordType",
-    "spcxPrice",
-    "returnRate",
-    "moodScore",
-    "action",
-    "redoChoice",
-    "psycheTags",
-    "regretScore",
-    "note",
-    "createdAt",
-    "updatedAt",
-  ];
-  const rows = sortEntries(activeEntries(), true).map((entry) => {
-    const sheetEntry = toSheetEntry(entry);
-    return headers
-      .map((key) => `"${String(sheetEntry[key] ?? "").replaceAll('"', '""')}"`)
-      .join(",");
-  });
-  downloadFile(
-    "spcx-investment-psychology-journal.csv",
-    [headers.join(","), ...rows].join("\n"),
-    "text/csv;charset=utf-8",
-  );
-}
-
-function exportJson() {
-  downloadFile(
-    `spcx-investment-lab-export-${todayString()}.json`,
-    JSON.stringify(
-      {
-        version: BACKUP_VERSION,
-        exportedAt: new Date().toISOString(),
-        source: "google-sheets-cache",
-        entries: sortEntries(state.entries, true).map(toSheetEntry),
-      },
-      null,
-      2,
-    ),
-    "application/json;charset=utf-8",
-  );
-}
-
-function exportReport() {
-  const stats = calculateStats();
-  const insights = generatePsychologyInsights();
-  const records = sortEntries(activeEntries(), true)
-    .map(
-      (entry) => `## ${formatDate(entry.date)}
-
-- 記錄類型：${entry.recordType || DEFAULT_RECORD_TYPE}
-- SPCX：${formatPrice(entry.price)}
-- 報酬率：${formatPercent(entry.returnRate)}
-- 心情：${entry.mood}/10 ${emojiFor(entry.mood, moodEmojis)}
-- 動作：${displayAction(entry.action)}
-- 重來一次：${entry.replayChoice || DEFAULT_REPLAY_CHOICE}
-- 心理標籤：${formatTags(entry.psycheTags)}
-- 後悔指數：${entry.regret}/10 ${emojiFor(entry.regret, regretEmojis)}
-- 心得：${entry.note}`,
-    )
-    .join("\n\n");
-
-  const report = `# SPCX 投資心理研究室完整報告
-
-產出時間：${new Date().toLocaleString("zh-TW")}
-
-## 總覽
-
-- 總日記數：${stats.total}
-- 平均心情：${stats.averageMood.toFixed(1)}
-- 平均報酬率：${formatPercent(stats.averageReturn)}
-- 平均後悔指數：${stats.averageRegret.toFixed(1)}
-- 最高報酬率：${formatPercent(stats.highestReturn)}
-- 最低報酬率：${formatPercent(stats.lowestReturn)}
-- 最常選擇的動作：${displayAction(stats.mostCommonAction)}
-- 最常出現的重來一次選項：${stats.mostCommonReplay}
-- 心理標籤排行榜：
-${stats.tagLeaderboard
-  .split("\n")
-  .map((line) => `  - ${line}`)
-  .join("\n")}
-
-## 心理分析摘要
-
-${insights.map((line) => `- ${line}`).join("\n")}
-
-## 所有歷史紀錄
-
-${records || "尚未建立日記。"}
-`;
-
-  downloadFile("spcx-investment-psychology-report.md", report, "text/markdown;charset=utf-8");
 }
 
 function render() {
-  renderStats();
-  renderHistory();
-  renderCharts();
+  Object.values(state.charts).forEach((chart) => chart?.destroy());
+  state.charts = {};
+
+  Object.entries(views).forEach(([name, element]) => {
+    element.hidden = name !== state.view;
+  });
+
+  navButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.view === state.view);
+  });
+
+  if (state.view === "dashboard") renderDashboard();
+  if (state.view === "detail") renderDetail();
+  if (state.view === "compare") renderCompare();
+  if (state.view === "archive") renderArchive();
 }
 
-function bindEvents() {
-  form.addEventListener("submit", upsertEntry);
-  fields.mood.addEventListener("input", updateRangeLabels);
-  fields.regret.addEventListener("input", updateRangeLabels);
-  document.querySelector("#resetFormButton").addEventListener("click", resetForm);
-  document.querySelector("#useYesterdayButton").addEventListener("click", useYesterdayData);
-  document.querySelector("#analyzeButton").addEventListener("click", analyzePsychology);
-  document.querySelector("#exportCsvButton").addEventListener("click", exportCsv);
-  document.querySelector("#exportJsonButton").addEventListener("click", exportJson);
-  document.querySelector("#exportReportButton").addEventListener("click", exportReport);
-  controls.settingsToggleButton.addEventListener("click", toggleSettings);
-  controls.saveSettingsButton.addEventListener("click", saveSettings);
-  controls.refreshSheetsButton.addEventListener("click", loadFromSheets);
-}
-
-function init() {
-  loadSettings();
-  bindEvents();
-  resetForm();
-  state.entries = readCache();
+function setView(view, detailId = null) {
+  state.view = view;
+  state.detailId = detailId;
   render();
-  loadFromSheets();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-init();
+function renderDashboard() {
+  views.dashboard.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">總覽</p>
+        <h2>研究對象總覽</h2>
+      </div>
+    </div>
+    <form id="idolForm" class="panel" autocomplete="off">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">新增研究對象</p>
+          <h3>新增偶像</h3>
+        </div>
+      </div>
+      <div class="form-grid">
+        <label>偶像姓名<input name="name" required placeholder="例：南世菜" /></label>
+        <label>所屬團體<input name="group" required placeholder="例：AsIs" /></label>
+        <label>類型標籤<input name="type" required placeholder="例：情感型" /></label>
+        <label>狀態
+          <select name="status">
+            <option value="active">觀察中</option>
+            <option value="paused">暫停觀察</option>
+          </select>
+        </label>
+        <label class="full-span">備註<textarea name="memo" placeholder="這位偶像在心理分析上的初始假設"></textarea></label>
+      </div>
+      <div class="form-actions">
+        <button class="primary-button" type="submit">新增偶像</button>
+      </div>
+    </form>
+    <div class="dashboard-grid">${state.idols.map(renderIdolCard).join("")}</div>
+  `;
+
+  views.dashboard.querySelector("#idolForm").addEventListener("submit", handleIdolSubmit);
+  views.dashboard.querySelectorAll("[data-open-idol]").forEach((button) => {
+    button.addEventListener("click", () => setView("detail", button.dataset.openIdol));
+  });
+}
+
+function renderIdolCard(idol) {
+  const metrics = getMetrics(idol.id);
+  return `
+    <button class="idol-card" type="button" data-open-idol="${idol.id}">
+      <div class="idol-card-head">
+        <div>
+          <h3>${escapeHtml(idol.name)}</h3>
+          <small>${escapeHtml(idol.group)}</small>
+        </div>
+        <span class="pill ${statusClass(metrics.trend)}">${metrics.trend}</span>
+      </div>
+      <div class="pill-row">
+        <span class="pill">${escapeHtml(idol.type)}</span>
+        <span class="pill muted-pill">${metrics.count} 筆紀錄</span>
+      </div>
+      <div class="metric-grid">
+        ${metricHtml("平均心情", formatScore(metrics.mood))}
+        ${metricHtml("特典滿意度", formatScore(metrics.satisfaction))}
+        ${metricHtml("平均壓力值", formatScore(metrics.stress))}
+        ${metricHtml("後悔指數", formatScore(metrics.regret))}
+        ${metricHtml("不特典也想看Live", formatScore(metrics.liveOnlyInterest))}
+      </div>
+    </button>
+  `;
+}
+
+function metricHtml(label, value) {
+  return `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function handleIdolSubmit(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  state.idols.push(
+    normalizeIdol({
+      id: uid("idol"),
+      name: formData.get("name"),
+      group: formData.get("group"),
+      type: formData.get("type"),
+      memo: formData.get("memo"),
+      status: formData.get("status"),
+    }),
+  );
+  state.compareIds = state.idols.slice(0, 3).map((idol) => idol.id);
+  event.currentTarget.reset();
+  persistAndSync();
+}
+
+function renderDetail() {
+  const idol = getIdol(state.detailId) || state.idols[0];
+  if (!idol) {
+    views.detail.innerHTML = `<div class="empty-state">尚未建立偶像資料。</div>`;
+    return;
+  }
+  state.detailId = idol.id;
+  const records = recordsForIdol(idol.id);
+  const analysis = analyzeIdol(idol.id);
+
+  views.detail.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">單一偶像分析</p>
+        <h2>${escapeHtml(idol.name)}</h2>
+      </div>
+      <div class="section-actions">
+        <button class="ghost-button" type="button" data-back-dashboard>回總覽</button>
+      </div>
+    </div>
+    <div class="detail-layout">
+      <div class="stack">
+        <article class="panel">
+          <p class="eyebrow">偶像基本資料</p>
+          <form id="idolProfileForm" class="form-grid">
+            <label>偶像姓名<input name="name" required value="${escapeHtml(idol.name)}" /></label>
+            <label>所屬團體<input name="group" required value="${escapeHtml(idol.group)}" /></label>
+            <label>類型標籤<input name="type" required value="${escapeHtml(idol.type)}" /></label>
+            <label>狀態
+              <select name="status">
+                <option value="active" ${idol.status === "active" ? "selected" : ""}>觀察中</option>
+                <option value="paused" ${idol.status === "paused" ? "selected" : ""}>暫停觀察</option>
+              </select>
+            </label>
+            <label class="full-span">備註<textarea name="memo">${escapeHtml(idol.memo)}</textarea></label>
+            <div class="form-actions full-span">
+              <button class="primary-button" type="submit">儲存偶像資料</button>
+              <button class="ghost-button danger-button" type="button" data-delete-idol>刪除偶像與紀錄</button>
+            </div>
+          </form>
+        </article>
+        <article class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">新增特典紀錄</p>
+              <h3>新增特典紀錄</h3>
+            </div>
+          </div>
+          <form id="quickRecordForm" class="form-grid">
+            ${recordFieldsHtml({ idolId: idol.id })}
+            <div class="form-actions full-span">
+              <button class="primary-button" type="submit">新增紀錄</button>
+            </div>
+          </form>
+        </article>
+        <article class="panel">
+          <p class="eyebrow">歷史紀錄</p>
+          <h3>歷史紀錄列表</h3>
+          <div class="record-list">${records.length ? records.slice().reverse().map(renderRecordCard).join("") : emptyState("還沒有特典紀錄。")}</div>
+        </article>
+      </div>
+      <div class="stack">
+        ${analysis ? renderAnalysis(analysis) : `<div class="analysis-box"><p class="muted">同一位偶像累積 3 筆以上紀錄後，會顯示自動文字分析。</p></div>`}
+        <div class="chart-grid">
+          ${chartSlot("moodChart", "心情變化")}
+          ${chartSlot("satisfactionChart", "特典滿意度變化")}
+          ${chartSlot("stressChart", "壓力值變化")}
+          ${chartSlot("wantChart", "想再見程度變化")}
+          ${chartSlot("regretChart", "後悔指數變化")}
+          ${chartSlot("liveChart", "不特典也想看Live程度變化")}
+        </div>
+      </div>
+    </div>
+  `;
+
+  views.detail.querySelector("[data-back-dashboard]").addEventListener("click", () => setView("dashboard"));
+  views.detail.querySelector("#idolProfileForm").addEventListener("submit", handleIdolProfileSubmit);
+  views.detail.querySelector("[data-delete-idol]").addEventListener("click", () => deleteIdol(idol.id));
+  views.detail.querySelector("#quickRecordForm").addEventListener("submit", handleRecordSubmit);
+  bindRecordActions(views.detail);
+  bindRangeOutputs(views.detail);
+  createDetailCharts(records);
+}
+
+function handleIdolProfileSubmit(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const index = state.idols.findIndex((idol) => idol.id === state.detailId);
+  if (index < 0) return;
+  state.idols[index] = normalizeIdol({
+    ...state.idols[index],
+    name: formData.get("name"),
+    group: formData.get("group"),
+    type: formData.get("type"),
+    memo: formData.get("memo"),
+    status: formData.get("status"),
+    updatedAt: Date.now(),
+  });
+  persistAndSync();
+}
+
+function deleteIdol(idolId) {
+  const idol = getIdol(idolId);
+  if (!idol || !window.confirm(`確定要刪除「${idol.name}」與她的所有特典紀錄嗎？`)) return;
+  state.idols = state.idols.filter((item) => item.id !== idolId);
+  state.records = state.records.filter((record) => record.idolId !== idolId);
+  state.compareIds = state.compareIds.filter((id) => id !== idolId);
+  state.detailId = state.idols[0]?.id || null;
+  state.view = "dashboard";
+  persistAndSync();
+}
+
+function recordFieldsHtml(record = {}) {
+  const idolOptions = state.idols
+    .map((idol) => `<option value="${idol.id}" ${idol.id === record.idolId ? "selected" : ""}>${escapeHtml(idol.name)} / ${escapeHtml(idol.group)}</option>`)
+    .join("");
+  return `
+    <input type="hidden" name="id" value="${escapeHtml(record.id || "")}" />
+    <label>偶像
+      <select name="idolId" required>${idolOptions}</select>
+    </label>
+    <label>日期<input name="date" type="date" required value="${escapeHtml(record.date || todayString())}" /></label>
+    <label>拍立得張數<input name="chekiCount" type="number" min="0" step="1" inputmode="numeric" value="${record.chekiCount ?? 1}" /></label>
+    <label>花費（日圓）<input name="cost" type="number" min="0" step="1" inputmode="numeric" value="${record.cost ?? ""}" placeholder="例：1650" /></label>
+    <label class="full-span">一句摘要<input name="summary" maxlength="80" value="${escapeHtml(record.summary || "")}" placeholder="例：她記得上次聊過的事" /></label>
+    ${scoreFields.map(([key, label]) => rangeFieldHtml(key, label, record[key] ?? 5)).join("")}
+    <label class="full-span">備註<textarea name="memo" placeholder="互動細節、自己當下的反應、離開後的感覺">${escapeHtml(record.memo || "")}</textarea></label>
+  `;
+}
+
+function rangeFieldHtml(key, label, value) {
+  return `
+    <label class="range-field">
+      <span class="range-label"><span>${label}</span><strong class="range-value" data-range-value="${key}">${value}/10</strong></span>
+      <input name="${key}" type="range" min="0" max="10" value="${value}" data-range="${key}" />
+    </label>
+  `;
+}
+
+function bindRangeOutputs(root) {
+  root.querySelectorAll("[data-range]").forEach((input) => {
+    const output = root.querySelector(`[data-range-value="${input.dataset.range}"]`);
+    const update = () => {
+      output.textContent = `${input.value}/10`;
+    };
+    input.addEventListener("input", update);
+    update();
+  });
+}
+
+function handleRecordSubmit(event) {
+  event.preventDefault();
+  const record = readRecordForm(event.currentTarget);
+  const existingIndex = state.records.findIndex((item) => item.id === record.id);
+  if (existingIndex >= 0) {
+    state.records[existingIndex] = normalizeRecord({ ...state.records[existingIndex], ...record, updatedAt: Date.now() });
+  } else {
+    state.records.push(normalizeRecord({ ...record, id: uid("record"), createdAt: Date.now(), updatedAt: Date.now() }));
+  }
+  recordDialog.close();
+  persistAndSync();
+}
+
+function readRecordForm(form) {
+  const formData = new FormData(form);
+  const record = {
+    id: formData.get("id") || "",
+    idolId: formData.get("idolId"),
+    date: formData.get("date"),
+    chekiCount: formData.get("chekiCount"),
+    cost: formData.get("cost"),
+    summary: formData.get("summary").trim(),
+    memo: formData.get("memo").trim(),
+  };
+  scoreFields.forEach(([key]) => {
+    record[key] = clampScore(formData.get(key));
+  });
+  return record;
+}
+
+function renderRecordCard(record) {
+  const idol = getIdol(record.idolId);
+  return `
+    <article class="record-card">
+      <div class="record-card-head">
+        <div>
+          <h3>${escapeHtml(record.summary || "未命名紀錄")}</h3>
+          <small>${formatDate(record.date)} / ${escapeHtml(idol?.name || "未知偶像")} / ${formatYen(record.cost)}</small>
+        </div>
+        <div class="section-actions">
+          <button class="ghost-button" type="button" data-edit-record="${record.id}">編輯</button>
+          <button class="ghost-button danger-button" type="button" data-delete-record="${record.id}">刪除</button>
+        </div>
+      </div>
+      <div class="record-meta">
+        <span class="pill">心情 ${record.mood}</span>
+        <span class="pill">滿意 ${record.satisfaction}</span>
+        <span class="pill">壓力 ${record.stress}</span>
+        <span class="pill">想再見 ${record.wantToMeetAgain}</span>
+        <span class="pill">後悔 ${record.regret}</span>
+        <span class="pill">${record.chekiCount} 張</span>
+      </div>
+      <p class="record-memo">${escapeHtml(record.memo || "沒有備註。")}</p>
+    </article>
+  `;
+}
+
+function renderAnalysis(analysis) {
+  const boolText = (value) => (value ? "是" : "否");
+  return `
+    <article class="analysis-box">
+      <p class="eyebrow">自動分析</p>
+      <h3>自動文字分析</h3>
+      <div class="analysis-grid">
+        ${analysisItem("目前狀態", analysis.status)}
+        ${analysisItem("主要價值", analysis.mainValue)}
+        ${analysisItem("高壓力傾向", boolText(analysis.highStress))}
+        ${analysisItem("花錢但後悔傾向", boolText(analysis.regretSpend))}
+        ${analysisItem("適合降低特典頻率", boolText(analysis.reduceFrequency))}
+        ${analysisItem("不特典也會想看Live型", boolText(analysis.liveOnlyType))}
+      </div>
+    </article>
+  `;
+}
+
+function analysisItem(label, value) {
+  return `<div class="analysis-item"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
+function chartSlot(id, title) {
+  return `<article class="chart-card"><h3>${title}</h3><canvas id="${id}"></canvas></article>`;
+}
+
+function createDetailCharts(records) {
+  const labels = records.map((record) => formatDate(record.date));
+  [
+    ["moodChart", "mood", "心情", "#ff8fc7"],
+    ["satisfactionChart", "satisfaction", "特典滿意度", "#8bdcff"],
+    ["stressChart", "stress", "壓力值", "#f6cf73"],
+    ["wantChart", "wantToMeetAgain", "想再見程度", "#bca8ff"],
+    ["regretChart", "regret", "後悔指數", "#ff7f92"],
+    ["liveChart", "liveOnlyInterest", "不特典也想看Live", "#8ef2dc"],
+  ].forEach(([canvasId, key, label, color]) => {
+    const canvas = document.querySelector(`#${canvasId}`);
+    if (!canvas) return;
+    state.charts[canvasId] = makeLineChart(canvas, labels, records.map((record) => record[key]), label, color);
+  });
+}
+
+function chartDefaults() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        min: 0,
+        max: 10,
+        grid: { color: "rgba(255, 210, 234, 0.12)" },
+        ticks: { color: "#c9bdd4", stepSize: 2 },
+      },
+      x: {
+        grid: { display: false },
+        ticks: { color: "#c9bdd4" },
+      },
+    },
+    plugins: {
+      legend: { labels: { color: "#f5edf8" } },
+    },
+  };
+}
+
+function makeLineChart(canvas, labels, values, label, color) {
+  if (typeof Chart === "undefined") return null;
+  return new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label,
+          data: values,
+          borderColor: color,
+          backgroundColor: `${color}33`,
+          borderWidth: 2,
+          pointRadius: 4,
+          tension: 0.32,
+          fill: true,
+        },
+      ],
+    },
+    options: chartDefaults(),
+  });
+}
+
+function makeBarChart(canvas, labels, datasets) {
+  if (typeof Chart === "undefined") return null;
+  return new Chart(canvas, {
+    type: "bar",
+    data: { labels, datasets },
+    options: {
+      ...chartDefaults(),
+      scales: {
+        y: { beginAtZero: true, grid: { color: "rgba(255, 210, 234, 0.12)" }, ticks: { color: "#c9bdd4" } },
+        x: { grid: { display: false }, ticks: { color: "#c9bdd4" } },
+      },
+    },
+  });
+}
+
+function renderCompare() {
+  const selectedIds = state.compareIds.filter((id) => getIdol(id)).slice(0, 5);
+  state.compareIds = selectedIds.length ? selectedIds : state.idols.slice(0, 2).map((idol) => idol.id);
+  const selectedIdols = state.compareIds.map(getIdol).filter(Boolean);
+  const labels = selectedIdols.map((idol) => idol.name);
+  const metrics = selectedIdols.map((idol) => getMetrics(idol.id));
+
+  views.compare.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">比較分析</p>
+        <h2>比較分析</h2>
+      </div>
+    </div>
+    <div class="compare-selector">
+      ${state.idols.map((idol) => `
+        <label class="check-tile">
+          <input type="checkbox" value="${idol.id}" ${state.compareIds.includes(idol.id) ? "checked" : ""} />
+          <span>${escapeHtml(idol.name)}<br /><small class="muted">${escapeHtml(idol.group)}</small></span>
+        </label>
+      `).join("")}
+    </div>
+    <div class="chart-grid">
+      ${chartSlot("compareScoreChart", "平均分數比較")}
+      ${chartSlot("compareCostChart", "花費與紀錄次數")}
+    </div>
+    <article class="analysis-box">
+      <p class="eyebrow">比較摘要</p>
+      <p class="summary-text">${compareText(selectedIdols, metrics)}</p>
+    </article>
+  `;
+
+  views.compare.querySelectorAll(".check-tile input").forEach((input) => {
+    input.addEventListener("change", handleCompareSelection);
+  });
+
+  state.charts.compareScoreChart = makeBarChart(views.compare.querySelector("#compareScoreChart"), labels, [
+    dataset("平均心情", metrics.map((m) => m.mood), "#ff8fc7"),
+    dataset("特典滿意度", metrics.map((m) => m.satisfaction), "#8bdcff"),
+    dataset("壓力值", metrics.map((m) => m.stress), "#f6cf73"),
+    dataset("後悔指數", metrics.map((m) => m.regret), "#ff7f92"),
+    dataset("想再見程度", metrics.map((m) => m.wantToMeetAgain), "#bca8ff"),
+    dataset("不特典也想看Live", metrics.map((m) => m.liveOnlyInterest), "#8ef2dc"),
+  ]);
+  state.charts.compareCostChart = makeBarChart(views.compare.querySelector("#compareCostChart"), labels, [
+    dataset("花費總額", metrics.map((m) => m.cost), "#8bdcff"),
+    dataset("特典紀錄次數", metrics.map((m) => m.count), "#ff8fc7"),
+  ]);
+}
+
+function dataset(label, data, color) {
+  return { label, data: data.map((value) => value ?? 0), backgroundColor: `${color}99`, borderColor: color, borderWidth: 1 };
+}
+
+function handleCompareSelection(event) {
+  const id = event.currentTarget.value;
+  if (event.currentTarget.checked) {
+    if (state.compareIds.length >= 5) {
+      event.currentTarget.checked = false;
+      return;
+    }
+    state.compareIds.push(id);
+  } else {
+    state.compareIds = state.compareIds.filter((selectedId) => selectedId !== id);
+  }
+  if (state.compareIds.length < 2 && state.idols.length >= 2) {
+    event.currentTarget.checked = true;
+    state.compareIds.push(id);
+  }
+  renderCompare();
+}
+
+function compareText(idols, metrics) {
+  if (idols.length < 2) return "請選擇 2 至 5 位偶像進行比較。";
+  if (!metrics.some((metric) => metric.count > 0)) {
+    return "目前選擇的偶像尚未累積特典紀錄。新增紀錄後，這裡會比較平均心情、滿意度、壓力、後悔、想再見程度、Live 本體吸引力與花費。";
+  }
+  const bestMoodIndex = maxIndex(metrics.map((metric) => metric.mood ?? -1));
+  const highestStressIndex = maxIndex(metrics.map((metric) => metric.stress ?? -1));
+  const bestLiveIndex = maxIndex(metrics.map((metric) => metric.liveOnlyInterest ?? -1));
+  return `${idols[bestMoodIndex]?.name || "-"} 目前帶來最高平均心情；${idols[highestStressIndex]?.name || "-"} 的平均壓力值最高，適合觀察是否需要降低特典頻率；${idols[bestLiveIndex]?.name || "-"} 的「不特典也想看Live程度」最高，較接近表演本體也能成立的支持型。`;
+}
+
+function maxIndex(values) {
+  return values.reduce((best, value, index) => (value > values[best] ? index : best), 0);
+}
+
+function renderArchive() {
+  const groups = [...new Set(state.idols.map((idol) => idol.group))];
+  const filtered = state.records
+    .filter((record) => state.archiveFilters.idolId === "all" || record.idolId === state.archiveFilters.idolId)
+    .filter((record) => {
+      const idol = getIdol(record.idolId);
+      return state.archiveFilters.group === "all" || idol?.group === state.archiveFilters.group;
+    })
+    .sort(state.archiveFilters.sort === "asc" ? byDateAsc : byDateDesc);
+
+  views.archive.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">歷史紀錄</p>
+        <h2>所有特典紀錄</h2>
+      </div>
+      <div class="section-actions">
+        <button class="primary-button" type="button" data-new-record>新增紀錄</button>
+      </div>
+    </div>
+    <div class="filter-grid">
+      <label>依偶像篩選
+        <select data-filter="idolId">
+          <option value="all">全部偶像</option>
+          ${state.idols.map((idol) => `<option value="${idol.id}" ${state.archiveFilters.idolId === idol.id ? "selected" : ""}>${escapeHtml(idol.name)}</option>`).join("")}
+        </select>
+      </label>
+      <label>依團體篩選
+        <select data-filter="group">
+          <option value="all">全部團體</option>
+          ${groups.map((group) => `<option value="${escapeHtml(group)}" ${state.archiveFilters.group === group ? "selected" : ""}>${escapeHtml(group)}</option>`).join("")}
+        </select>
+      </label>
+      <label>依日期排序
+        <select data-filter="sort">
+          <option value="desc" ${state.archiveFilters.sort === "desc" ? "selected" : ""}>新到舊</option>
+          <option value="asc" ${state.archiveFilters.sort === "asc" ? "selected" : ""}>舊到新</option>
+        </select>
+      </label>
+    </div>
+    <div class="record-list">${filtered.length ? filtered.map(renderRecordCard).join("") : emptyState("沒有符合條件的紀錄。")}</div>
+  `;
+
+  views.archive.querySelector("[data-new-record]").addEventListener("click", () => openRecordDialog());
+  views.archive.querySelectorAll("[data-filter]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.archiveFilters[select.dataset.filter] = select.value;
+      renderArchive();
+    });
+  });
+  bindRecordActions(views.archive);
+}
+
+function bindRecordActions(root) {
+  root.querySelectorAll("[data-edit-record]").forEach((button) => {
+    button.addEventListener("click", () => openRecordDialog(button.dataset.editRecord));
+  });
+  root.querySelectorAll("[data-delete-record]").forEach((button) => {
+    button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord));
+  });
+}
+
+function openRecordDialog(recordId = null) {
+  const record = recordId ? state.records.find((item) => item.id === recordId) : { idolId: state.detailId || state.idols[0]?.id };
+  recordDialogTitle.textContent = recordId ? "編輯特典紀錄" : "新增特典紀錄";
+  recordFormFields.innerHTML = `<div class="form-grid">${recordFieldsHtml(record || {})}</div>`;
+  bindRangeOutputs(recordForm);
+  recordDialog.showModal();
+}
+
+function deleteRecord(recordId) {
+  if (!window.confirm("確定要刪除這筆特典紀錄嗎？")) return;
+  state.records = state.records.filter((record) => record.id !== recordId);
+  persistAndSync();
+}
+
+function emptyState(text) {
+  return `<div class="empty-state">${text}</div>`;
+}
+
+navButtons.forEach((button) => {
+  button.addEventListener("click", () => setView(button.dataset.view));
+});
+
+recordForm.addEventListener("submit", handleRecordSubmit);
+document.querySelectorAll("[data-close-dialog]").forEach((button) => {
+  button.addEventListener("click", () => recordDialog.close());
+});
+
+syncSettingsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveSettings();
+  void loadFromSheets();
+});
+
+refreshSheetsButton.addEventListener("click", () => {
+  void loadFromSheets();
+});
+
+loadSettings();
+const localData = readLocalData();
+state.idols = localData.idols;
+state.records = localData.records;
+state.compareIds = state.idols.slice(0, 3).map((idol) => idol.id);
+saveState();
+render();
+void loadFromSheets();

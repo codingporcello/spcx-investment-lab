@@ -1,121 +1,115 @@
-# 🚀 SPCX 投資心理研究室
+# 偶像特典會心理分析工具
 
-價格記錄市場，日記記錄自己。
+深色模式的「偶像推活研究室」dashboard，用來記錄多位偶像特典會互動後的心情、滿意度、壓力、後悔與 Live 本體吸引力。
 
-這是一個可部署於 GitHub Pages 的單頁網站，用來研究投資人的心情、後悔指數、記錄類型、心理標籤、操作傾向與「如果重來一次」的心理變化。
+目前架構：
 
-V3 版使用：
+Google Sheets → Apps Script Web App → GitHub Pages 網站
 
-Google Sheets → Apps Script API → GitHub Pages 網站
-
-Google Sheets 是唯一真實資料來源。LocalStorage 只作為 Google Sheets 暫時無法連線時的本機快取。
+Google Sheets 是雲端同步來源。LocalStorage 會作為離線或同步失敗時的本機快取。
 
 ## 檔案
 
-- `index.html`：頁面結構
-- `styles.css`：深色太空研究室風格
-- `app.js`：Google Sheets 同步、圖表、統計分析、匯出功能
-- `apps-script.gs`：貼到 Google Apps Script 的後端 API 程式碼
+- `index.html`：四層 SPA 頁面入口
+- `styles.css`：深色偶像風 dashboard 樣式
+- `app.js`：localStorage、Google Sheets 同步、圖表與分析邏輯
+- `apps-script.gs`：貼到 Google Apps Script 的後端程式
+- `public/hzme-icon.jpg`：favicon、瀏覽器分頁與手機 icon
+- `config.js`：本機或靜態部署用 Apps Script URL 設定
+- `.github/workflows/deploy-pages.yml`：GitHub Actions 自動部署設定
 
-## Google Sheets 設定教學
+## Google Sheets 結構
 
-### 1. 建立 Google Sheets
+請建立兩個工作表。
 
-1. 到 [Google Sheets](https://sheets.google.com)。
-2. 建立一個新的試算表。
-3. 將試算表命名成 `SPCX 投資心理研究室`。
-4. 建立或改名一個工作表為 `SPCX_JOURNAL`。
-
-第一列請放這些欄位：
+### idols
 
 ```text
-id
-date
-spcxPrice
-returnRate
-moodScore
-action
-redoChoice
-regretScore
-note
-createdAt
-updatedAt
-deleted
-deletedAt
-recordType
-psycheTags
+id, name, group, type, memo, status, createdAt, updatedAt
 ```
 
-`deleted` 和 `deletedAt` 是軟刪除用欄位。畫面不會顯示 deleted 為 TRUE 的資料。
+### records
 
-如果你已經有舊版資料，請把 `recordType` 和 `psycheTags` 加在最後兩欄，不要插到中間。舊資料缺少這兩欄時，網站會自動視為：
+```text
+id, idolId, date, chekiCount, cost, summary, mood, satisfaction, stress, naturalness, wantToMeetAgain, regret, liveOnlyInterest, memo, createdAt, updatedAt
+```
 
-- `recordType`：盤中
-- `psycheTags`：空白
+`records.idolId` 必須對應 `idols.id`。
 
-V3 只保留三種記錄類型：`盤中`、`收盤`、`回顧`。不加入盤後，避免資料被過度切碎。
+## Apps Script 設定
 
-### 2. 建立 Apps Script
-
-1. 在 Google Sheets 上方選單點 `Extensions`。
-2. 點 `Apps Script`。
-3. 刪掉預設內容。
-4. 將本專案的 `apps-script.gs` 全部內容貼上。
-5. 按儲存。
-
-### 3. 部署為 Web App
-
-1. 在 Apps Script 右上角點 `Deploy`。
-2. 點 `New deployment`。
-3. 類型選 `Web app`。
-4. Description 可填：`SPCX Journal API`。
-5. `Execute as` 選 `Me`。
-6. `Who has access` 選 `Anyone`。
-7. 點 `Deploy`。
-8. 第一次會要求授權，照畫面登入並允許存取這份 Google Sheet。
-9. 複製產生的 Web App URL，格式大約是：
+1. 建立 Google Sheets。
+2. 在 Google Sheets 選單打開 `Extensions` → `Apps Script`。
+3. 刪除預設內容，貼上本專案的 `apps-script.gs`。
+4. 儲存後點 `Deploy` → `New deployment`。
+5. 類型選 `Web app`。
+6. `Execute as` 選 `Me`。
+7. `Who has access` 選 `Anyone`。
+8. 部署後複製 Web App URL，格式類似：
 
 ```text
 https://script.google.com/macros/s/xxxxxxxx/exec
 ```
 
-### 4. 貼回網站
+## 本機測試
 
-1. 打開 GitHub Pages 網站。
-2. 找到 `⚙️ Google Sheets 設定`。
-3. 將 Web App URL 貼進 `Apps Script Web App URL`。
-4. 按 `儲存設定`。
-5. 右上角顯示 `🟢 已同步` 就代表成功。
+```bash
+python3 -m http.server 4173
+```
 
-之後你在 Mac 新增一筆日記，iPhone 重新整理同一個網站後，就會從同一份 Google Sheets 讀到資料。
+開啟：
 
-## 同步狀態
+```text
+http://127.0.0.1:4173/
+```
 
-- `🟢 已同步`：已成功讀取或寫入 Google Sheets。
-- `🟡 同步中`：正在讀取或寫入 Google Sheets。
-- `🔴 無法連線`：目前無法連線 Google Sheets，畫面會顯示 LocalStorage 快取資料。
+同步 URL 可以直接貼在網站上方的「Google Sheets 同步設定」。也可以修改 `config.js`：
+
+```js
+window.IDOL_LAB_CONFIG = {
+  GOOGLE_APPS_SCRIPT_URL: "https://script.google.com/macros/s/xxxxxxxx/exec",
+};
+```
+
+## Build 檢查
+
+```bash
+npm run check
+npm run build
+```
+
+build 產物會輸出到 `dist/`。
 
 ## GitHub Pages 部署
 
-1. 將此資料夾推送到 GitHub repository。
-2. 到 repository 的 Settings。
-3. 開啟 Pages。
-4. Source 選擇 `Deploy from a branch`。
-5. Branch 選擇 `main`，資料夾選擇 `/root`。
+1. 將專案 push 到 GitHub。
+2. 到 repository 的 `Settings` → `Pages`。
+3. `Build and deployment` 選 `GitHub Actions`。
+4. 到 `Settings` → `Secrets and variables` → `Actions`。
+5. 新增 repository secret：
 
-## 重要安全提醒
+```text
+GOOGLE_APPS_SCRIPT_URL
+```
 
-這個版本沒有登入系統。Apps Script Web App 設定為 `Anyone` 後，只要知道 API URL 的人就可能送資料。
+值填 Apps Script Web App URL。
 
-私人使用時請不要公開 Apps Script Web App URL。如果之後要更嚴格保護，可以再升級成登入或加入簡單 API key 檢查。
+6. push 到 `main` 後，GitHub Actions 會自動 build 並部署 `dist/`。
 
-## Apps Script 方法
+如果暫時不設定 secret，網站仍可部署，右上角會顯示本機模式；你也可以在頁面中手動貼上 Apps Script URL，該設定會存在目前裝置的 localStorage。
 
-`apps-script.gs` 內提供：
+## 手機與電腦同步確認
 
-- `doGet()`：讀取全部資料
-- `doPost()`：新增、更新、軟刪除資料
-- `doPut()`：更新資料
-- `doDelete()`：軟刪除資料
+1. 電腦開 GitHub Pages 網站。
+2. 確認右上角顯示 `已同步`。
+3. 新增一筆偶像或特典紀錄。
+4. 手機打開同一個 GitHub Pages URL。
+5. 若右上角顯示 `已同步` 並看得到剛新增的資料，代表同步成功。
+6. 手機新增一筆紀錄後，電腦重新整理頁面，也應該能看到手機新增的資料。
 
-網站端為了減少瀏覽器跨網域預檢問題，實際寫入會用 `doPost()` 搭配 `action` 欄位呼叫新增、更新、刪除。
+## 同步狀態
+
+- `已同步`：已成功讀取或寫入 Google Sheets。
+- `同步中`：正在讀取或寫入 Google Sheets。
+- `同步失敗`：Google Sheets 連線失敗，網站會保留 localStorage 快取。
+- `本機模式`：尚未設定 Apps Script URL，只使用 localStorage。
