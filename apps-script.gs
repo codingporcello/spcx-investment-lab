@@ -1,180 +1,212 @@
-const IDOLS_SHEET_NAME = "idols";
-const RECORDS_SHEET_NAME = "records";
-
-const IDOL_HEADERS = ["id", "name", "group", "type", "memo", "status", "createdAt", "updatedAt"];
-const RECORD_HEADERS = [
+const SHEET_NAME = "SPCX_JOURNAL";
+const HEADERS = [
   "id",
-  "idolId",
   "date",
-  "chekiCount",
-  "cost",
-  "summary",
-  "mood",
-  "satisfaction",
-  "stress",
-  "naturalness",
-  "wantToMeetAgain",
-  "regret",
-  "liveOnlyInterest",
-  "memo",
+  "spcxPrice",
+  "returnRate",
+  "moodScore",
+  "action",
+  "redoChoice",
+  "regretScore",
+  "note",
   "createdAt",
   "updatedAt",
+  "deleted",
+  "deletedAt",
+  "recordType",
+  "psycheTags",
 ];
 
 function doGet(e) {
-  const payload = parseGetPayload(e);
-  if (payload.action === "sync") {
-    return syncAll(payload);
-  }
-
   return jsonResponse({
     ok: true,
-    idols: readRows(IDOLS_SHEET_NAME, IDOL_HEADERS).map(normalizeIdol),
-    records: readRows(RECORDS_SHEET_NAME, RECORD_HEADERS).map(normalizeRecord),
+    entries: readEntries(),
   });
 }
 
 function doPost(e) {
   const payload = parsePayload(e);
-  const action = payload.action || "list";
+  const action = payload.action || "create";
 
   if (action === "list") {
-    return doGet();
+    return doGet(e);
   }
-
-  if (action === "sync") {
-    return syncAll(payload);
+  if (action === "create") {
+    return createEntry(payload.entry);
+  }
+  if (action === "update") {
+    return updateEntry(payload.entry);
+  }
+  if (action === "delete") {
+    return softDeleteEntry(payload.id);
   }
 
   return jsonResponse({ ok: false, error: "Unknown action" });
 }
 
-function syncAll(payload) {
-  const idols = Array.isArray(payload.idols) ? payload.idols.map(normalizeIdol) : [];
-  const idolIds = {};
-  idols.forEach(function (idol) {
-    idolIds[idol.id] = true;
-  });
-
-  const records = Array.isArray(payload.records)
-    ? payload.records.map(normalizeRecord).filter(function (record) {
-        return idolIds[record.idolId] === true;
-      })
-    : [];
-
-  writeRows(IDOLS_SHEET_NAME, IDOL_HEADERS, idols);
-  writeRows(RECORDS_SHEET_NAME, RECORD_HEADERS, records);
-
-  return jsonResponse({ ok: true, idols: idols, records: records });
+function doPut(e) {
+  const payload = parsePayload(e);
+  return updateEntry(payload.entry);
 }
 
-function readRows(sheetName, headers) {
-  const sheet = getSheet(sheetName, headers);
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return [];
-
-  return sheet
-    .getRange(2, 1, lastRow - 1, headers.length)
-    .getValues()
-    .filter(function (row) {
-      return row[0];
-    })
-    .map(function (row) {
-      const item = {};
-      headers.forEach(function (header, index) {
-        item[header] = row[index];
-      });
-      return item;
-    });
+function doDelete(e) {
+  const payload = parsePayload(e);
+  return softDeleteEntry(payload.id);
 }
 
-function writeRows(sheetName, headers, rows) {
-  const sheet = getSheet(sheetName, headers);
-  sheet.clearContents();
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+function createEntry(entry) {
+  const sheet = getJournalSheet();
+  const normalized = normalizeEntry(entry);
+  const rowIndex = findRowIndexById(normalized.id);
 
-  if (!rows.length) return;
-
-  sheet
-    .getRange(2, 1, rows.length, headers.length)
-    .setValues(
-      rows.map(function (row) {
-        return headers.map(function (header) {
-          return row[header] === undefined || row[header] === null ? "" : row[header];
-        });
-      }),
-    );
-}
-
-function getSheet(sheetName, headers) {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = spreadsheet.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = spreadsheet.insertSheet(sheetName);
+  if (rowIndex > 0) {
+    writeEntryToRow(sheet, rowIndex, normalized);
+  } else {
+    sheet.appendRow(HEADERS.map((key) => normalized[key] ?? ""));
   }
 
-  const firstRow = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  const needsHeaders = headers.some(function (header, index) {
-    return firstRow[index] !== header;
-  });
+  return jsonResponse({ ok: true, entry: normalized, entries: readEntries() });
+}
+
+function updateEntry(entry) {
+  const sheet = getJournalSheet();
+  const normalized = normalizeEntry(entry);
+  const rowIndex = findRowIndexById(normalized.id);
+
+  if (rowIndex > 0) {
+    writeEntryToRow(sheet, rowIndex, normalized);
+  } else {
+    sheet.appendRow(HEADERS.map((key) => normalized[key] ?? ""));
+  }
+
+  return jsonResponse({ ok: true, entry: normalized, entries: readEntries() });
+}
+
+function softDeleteEntry(id) {
+  if (!id) {
+    return jsonResponse({ ok: false, error: "Missing id" });
+  }
+
+  const sheet = getJournalSheet();
+  const rowIndex = findRowIndexById(id);
+  if (rowIndex < 1) {
+    return jsonResponse({ ok: false, error: "Entry not found" });
+  }
+
+  const entry = rowToEntry(sheet.getRange(rowIndex, 1, 1, HEADERS.length).getValues()[0]);
+  const now = Date.now();
+  entry.deleted = true;
+  entry.deletedAt = now;
+  entry.updatedAt = now;
+  writeEntryToRow(sheet, rowIndex, entry);
+
+  return jsonResponse({ ok: true, entry: entry, entries: readEntries() });
+}
+
+function readEntries() {
+  const sheet = getJournalSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return [];
+  }
+
+  return sheet
+    .getRange(2, 1, lastRow - 1, HEADERS.length)
+    .getValues()
+    .filter((row) => row[0])
+    .map(rowToEntry);
+}
+
+function getJournalSheet() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(SHEET_NAME);
+  }
+
+  const firstRow = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  const needsHeaders = HEADERS.some((header, index) => firstRow[index] !== header);
   if (needsHeaders) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
   }
 
   return sheet;
 }
 
-function normalizeIdol(idol) {
+function findRowIndexById(id) {
+  const sheet = getJournalSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return -1;
+  }
+
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let index = 0; index < ids.length; index += 1) {
+    if (String(ids[index][0]) === String(id)) {
+      return index + 2;
+    }
+  }
+  return -1;
+}
+
+function writeEntryToRow(sheet, rowIndex, entry) {
+  sheet.getRange(rowIndex, 1, 1, HEADERS.length).setValues([
+    HEADERS.map((key) => entry[key] ?? ""),
+  ]);
+}
+
+function rowToEntry(row) {
+  const entry = {};
+  HEADERS.forEach((key, index) => {
+    entry[key] = row[index];
+  });
+
+  return normalizeEntry(entry);
+}
+
+function normalizeEntry(entry) {
   const now = Date.now();
   return {
-    id: String(idol.id || Utilities.getUuid()),
-    name: String(idol.name || ""),
-    group: String(idol.group || ""),
-    type: String(idol.type || ""),
-    memo: String(idol.memo || ""),
-    status: String(idol.status || "active"),
-    createdAt: Number(idol.createdAt || now),
-    updatedAt: Number(idol.updatedAt || now),
+    id: String(entry.id || Utilities.getUuid()),
+    date: entry.date ? String(entry.date).slice(0, 10) : "",
+    recordType: entry.recordType || "盤中",
+    spcxPrice: Number(entry.spcxPrice || 0),
+    returnRate: Number(entry.returnRate || 0),
+    moodScore: Number(entry.moodScore || 0),
+    action: entry.action || "",
+    redoChoice: entry.redoChoice || "",
+    psycheTags: normalizeTags(entry.psycheTags).join("、"),
+    regretScore: Number(entry.regretScore || 0),
+    note: entry.note || "",
+    createdAt: Number(entry.createdAt || now),
+    updatedAt: Number(entry.updatedAt || now),
+    deleted: entry.deleted === true || String(entry.deleted).toUpperCase() === "TRUE",
+    deletedAt: entry.deletedAt ? Number(entry.deletedAt) : "",
   };
 }
 
-function normalizeRecord(record) {
-  const now = Date.now();
-  return {
-    id: String(record.id || Utilities.getUuid()),
-    idolId: String(record.idolId || ""),
-    date: record.date ? String(record.date).slice(0, 10) : "",
-    chekiCount: Number(record.chekiCount || 0),
-    cost: Number(record.cost || 0),
-    summary: String(record.summary || ""),
-    mood: Number(record.mood || 0),
-    satisfaction: Number(record.satisfaction || 0),
-    stress: Number(record.stress || 0),
-    naturalness: Number(record.naturalness || 0),
-    wantToMeetAgain: Number(record.wantToMeetAgain || 0),
-    regret: Number(record.regret || 0),
-    liveOnlyInterest: Number(record.liveOnlyInterest || 0),
-    memo: String(record.memo || ""),
-    createdAt: Number(record.createdAt || now),
-    updatedAt: Number(record.updatedAt || now),
-  };
+function normalizeTags(value) {
+  const allowedTags = ["FOMO", "貪婪", "害怕", "後悔", "平靜", "興奮", "自信", "懷疑"];
+  const rawTags = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(/[、,|]/)
+        .map(function (tag) {
+          return tag.trim();
+        });
+
+  return rawTags.filter(function (tag, index) {
+    return allowedTags.indexOf(tag) >= 0 && rawTags.indexOf(tag) === index;
+  });
 }
 
 function parsePayload(e) {
-  if (!e || !e.postData || !e.postData.contents) return {};
+  if (!e || !e.postData || !e.postData.contents) {
+    return {};
+  }
 
   try {
     return JSON.parse(e.postData.contents);
-  } catch (error) {
-    return {};
-  }
-}
-
-function parseGetPayload(e) {
-  if (!e || !e.parameter || !e.parameter.payload) return {};
-
-  try {
-    return JSON.parse(e.parameter.payload);
   } catch (error) {
     return {};
   }
